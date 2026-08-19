@@ -358,7 +358,7 @@ export function buildTerminalEnv(params: {
     ...baseEnv,
     SHELL: shell,
     TERM: "xterm-256color",
-    TERM_PROGRAM: "Maestro",
+    TERM_PROGRAM: "Instructor",
     TERM_PROGRAM_VERSION: process.env.npm_package_version || "1.0.0",
     COLORTERM: "truecolor",
     LANG: locale,

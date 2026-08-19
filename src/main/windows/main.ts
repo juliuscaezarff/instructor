@@ -76,9 +76,9 @@ function registerIpcHandlers(): void {
     } else if (process.platform === "win32" && win) {
       // Windows: Update title with count as fallback
       if (count !== null && count > 0) {
-        win.setTitle(`Maestro (${count})`)
+        win.setTitle(`Instructor (${count})`)
       } else {
-        win.setTitle("Maestro")
+        win.setTitle("Instructor")
         win.setOverlayIcon(null, "")
       }
     }
@@ -245,7 +245,7 @@ function registerIpcHandlers(): void {
     const win = getWindowFromEvent(event)
     if (win) {
       // Show just the title, or default app name if empty
-      win.setTitle(title || "Maestro")
+      win.setTitle(title || "Instructor")
     }
   })
 
@@ -615,7 +615,7 @@ export function createWindow(options?: { chatId?: string; subChatId?: string }):
     minWidth: 500, // Allow narrow mobile-like mode
     minHeight: 600,
     show: false,
-    title: "Maestro",
+    title: "Instructor",
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#09090b" : "#ffffff",
     // hiddenInset shows native traffic lights inset in the window
     // hiddenInset hides the native title bar but keeps traffic lights visible

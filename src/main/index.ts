@@ -312,7 +312,7 @@ const server = createServer((req, res) => {
 <head>
   <meta charset="UTF-8">
   <link rel="icon" type="image/svg+xml" href="${FAVICON_DATA_URI}">
-  <title>Maestro - Authentication</title>
+  <title>Instructor - Authentication</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     :root {
@@ -396,7 +396,7 @@ const server = createServer((req, res) => {
 <head>
   <meta charset="UTF-8">
   <link rel="icon" type="image/svg+xml" href="${FAVICON_DATA_URI}">
-  <title>Maestro - MCP Authentication</title>
+  <title>Instructor - MCP Authentication</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     :root {
@@ -569,7 +569,7 @@ if (gotTheLock) {
       app.setAppUserModelId(IS_DEV ? "com.maestro.app.dev" : "com.maestro.app")
     }
 
-    console.log(`[App] Starting Maestro${IS_DEV ? " (DEV)" : ""}...`)
+    console.log(`[App] Starting Instructor${IS_DEV ? " (DEV)" : ""}...`)
 
     // Verify protocol registration after app is ready
     // This helps diagnose first-install issues where the protocol isn't recognized yet
@@ -593,10 +593,10 @@ if (gotTheLock) {
 
     // Set About panel options with Claude Code version
     app.setAboutPanelOptions({
-      applicationName: "Maestro",
+      applicationName: "Instructor",
       applicationVersion: app.getVersion(),
       version: `Claude Code ${claudeCodeVersion}`,
-      copyright: "Copyright © 2026 Maestro",
+      copyright: "Copyright © 2026 Instructor",
     })
 
     // Track update availability for menu
@@ -623,7 +623,7 @@ if (gotTheLock) {
           label: app.name,
           submenu: [
             {
-              label: "About Maestro",
+              label: "About Instructor",
               click: () => app.showAboutPanel(),
             },
             {
@@ -683,7 +683,7 @@ if (gotTheLock) {
                       type: "info",
                       message: "CLI command installed",
                       detail:
-                        "You can now use 'maestro .' in any terminal to open Maestro in that directory.",
+                        "You can now use 'maestro .' in any terminal to open Instructor in that directory.",
                     })
                     buildMenu()
                   } else {
