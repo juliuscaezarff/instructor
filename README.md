@@ -1,8 +1,8 @@
 <div align="center">
-  <img src="src/renderer/assets/app-icons/maestro-logo-black.svg" alt="Maestro" width="200" />
+  <img src="src/renderer/assets/app-icons/instructor-icon.svg" alt="Instructor" width="200" />
 </div>
 
-# Maestro
+# Instructor
 
 The Agentic Development Environment (ADE). Run AI coding agents with a visual UI, git isolation, and full control over your workflow — locally or in the cloud.
 

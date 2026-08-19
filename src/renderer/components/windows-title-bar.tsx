@@ -78,7 +78,7 @@ export function WindowsTitleBar() {
     >
       {/* Centered title */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <span className="text-xs font-medium text-foreground/70">Maestro</span>
+        <span className="text-xs font-medium text-foreground/70">Instructor</span>
       </div>
 
       {/* Right side - Window controls (non-draggable) */}

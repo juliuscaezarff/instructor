@@ -1,10 +1,10 @@
 {
-  "name": "maestro-desktop",
+  "name": "instructor-desktop",
   "version": "0.0.1",
   "private": true,
-  "description": "Maestro - UI for parallel work with AI agents",
+  "description": "Instructor - UI for parallel work with AI agents",
   "author": {
-    "name": "Maestro",
+    "name": "Instructor",
     "email": "support@maestro.com"
   },
   "main": "out/main/index.js",
@@ -142,7 +142,7 @@
   },
   "build": {
     "appId": "com.maestro.app",
-    "productName": "Maestro",
+    "productName": "Instructor",
     "npmRebuild": true,
     "protocols": [
       {
@@ -208,7 +208,7 @@
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "1Code needs microphone access for voice dictation"
+        "NSMicrophoneUsageDescription": "Instructor needs microphone access for voice dictation"
       }
     },
     "dmg": {

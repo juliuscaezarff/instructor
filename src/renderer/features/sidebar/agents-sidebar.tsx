@@ -1592,7 +1592,7 @@ const SidebarHeader = memo(function SidebarHeader({
                     </div>
                     <div className="min-w-0 flex-1 overflow-hidden">
                       <div className="text-sm font-medium text-foreground truncate">
-                        Maestro
+                        Instructor
                       </div>
                     </div>
                     {showOfflineFeatures && (
