@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { FolderOpen } from "lucide-react"
 import { useProjectIcon } from "../../lib/hooks/use-project-icon"
 import { cn } from "../../lib/utils"
@@ -18,6 +18,8 @@ export function ProjectIcon({ project, className }: ProjectIconProps) {
   const { src, hasError } = useProjectIcon(project)
   const [imgError, setImgError] = useState(false)
   const handleError = useCallback(() => setImgError(true), [])
+
+  useEffect(() => setImgError(false), [src])
 
   if (!project || hasError || !src || imgError) {
     return (

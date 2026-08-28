@@ -23,6 +23,10 @@ interface ResizableSidebarProps {
   dataAttributes?: Record<string, string | boolean>
   /** Disable close on click without drag */
   disableClickToClose?: boolean
+  /** Close when the user keeps dragging past the minimum usable width */
+  closeOnResizePastMin?: boolean
+  /** Fade the sidebar while it opens and closes */
+  fadeOnOpenClose?: boolean
   /** Show resize tooltip (Close/Resize instructions) */
   showResizeTooltip?: boolean
   /** Custom styles for the sidebar container */
@@ -33,6 +37,7 @@ const DEFAULT_MIN_WIDTH = 200
 const DEFAULT_MAX_WIDTH = 9999 // Effectively no limit - CSS constraints handle max width
 const DEFAULT_ANIMATION_DURATION = 0 // Disabled for performance
 const EXTENDED_HOVER_AREA_WIDTH = 8
+const RESIZE_CLOSE_THRESHOLD = 48
 
 export function ResizableSidebar({
   isOpen,
@@ -49,6 +54,8 @@ export function ResizableSidebar({
   exitWidth = 0,
   dataAttributes,
   disableClickToClose = false,
+  closeOnResizePastMin = false,
+  fadeOnOpenClose = true,
   showResizeTooltip = false,
   style,
 }: ResizableSidebarProps) {
@@ -72,7 +79,10 @@ export function ResizableSidebar({
   const [localWidth, setLocalWidth] = useState<number | null>(null)
 
   // Use local width during resize, otherwise use persisted width
-  const currentWidth = localWidth ?? sidebarWidth
+  const currentWidth = Math.max(
+    minWidth,
+    Math.min(maxWidth, localWidth ?? sidebarWidth),
+  )
 
   // Calculate tooltip position dynamically based on sidebar position
   const tooltipPosition = useMemo(() => {
@@ -212,7 +222,7 @@ export function ResizableSidebar({
       event.stopPropagation()
 
       const startX = event.clientX
-      const startWidth = sidebarWidth
+      const startWidth = currentWidth
       const pointerId = event.pointerId
       let hasMoved = false
       let currentLocalWidth: number | null = null
@@ -242,7 +252,10 @@ export function ResizableSidebar({
         setLocalWidth(newWidth)
       }
 
-      const handlePointerMove = (pointerEvent: PointerEvent) => {
+      const shouldCloseForWidth = (width: number) =>
+        closeOnResizePastMin && width <= minWidth - RESIZE_CLOSE_THRESHOLD
+
+      function handlePointerMove(pointerEvent: PointerEvent) {
         const delta = Math.abs(
           side === "left"
             ? pointerEvent.clientX - startX
@@ -253,12 +266,26 @@ export function ResizableSidebar({
         }
 
         if (hasMoved) {
+          const delta =
+            side === "left"
+              ? pointerEvent.clientX - startX
+              : startX - pointerEvent.clientX
+          const rawWidth = startWidth + delta
+
+          if (shouldCloseForWidth(rawWidth)) {
+            finishResize(undefined, true)
+            return
+          }
+
           // Update width immediately for real-time resize
           updateWidth(pointerEvent.clientX)
         }
       }
 
-      const finishResize = (pointerEvent?: PointerEvent) => {
+      function finishResize(
+        pointerEvent?: PointerEvent,
+        shouldClose = false,
+      ) {
         if (handleElement.hasPointerCapture?.(pointerId)) {
           handleElement.releasePointerCapture(pointerId)
         }
@@ -268,7 +295,10 @@ export function ResizableSidebar({
         document.removeEventListener("pointercancel", handlePointerCancel)
         setIsResizing(false)
 
-        if (!hasMoved && pointerEvent && !disableClickToClose) {
+        if (shouldClose) {
+          setLocalWidth(null)
+          handleClose()
+        } else if (!hasMoved && pointerEvent && !disableClickToClose) {
           handleClose()
         } else if (hasMoved && pointerEvent) {
           const delta =
@@ -289,11 +319,11 @@ export function ResizableSidebar({
         }
       }
 
-      const handlePointerUp = (pointerEvent: PointerEvent) => {
+      function handlePointerUp(pointerEvent: PointerEvent) {
         finishResize(pointerEvent)
       }
 
-      const handlePointerCancel = () => {
+      function handlePointerCancel() {
         finishResize()
       }
 
@@ -303,7 +333,16 @@ export function ResizableSidebar({
         once: true,
       })
     },
-    [sidebarWidth, setSidebarWidth, handleClose, minWidth, maxWidth, side, disableClickToClose],
+    [
+      currentWidth,
+      setSidebarWidth,
+      handleClose,
+      minWidth,
+      maxWidth,
+      side,
+      disableClickToClose,
+      closeOnResizePastMin,
+    ],
   )
 
   // Determine resize handle position based on side
@@ -351,27 +390,31 @@ export function ResizableSidebar({
               !shouldAnimate
                 ? {
                     width: currentWidth,
+                    minWidth,
                     opacity: 1,
                   }
                 : {
                     width: initialWidth,
-                    opacity: 0,
+                    minWidth: 0,
+                    opacity: fadeOnOpenClose ? 0 : 1,
                   }
             }
             animate={{
               width: currentWidth,
+              minWidth,
               opacity: 1,
             }}
             exit={{
               width: exitWidth,
-              opacity: 0,
+              minWidth: 0,
+              opacity: fadeOnOpenClose ? 0 : 1,
             }}
             transition={{
               duration: isResizing ? 0 : animationDuration,
               ease: [0.4, 0, 0.2, 1],
             }}
             className={`bg-transparent flex flex-col text-xs h-full relative ${className}`}
-            style={{ minWidth: minWidth, overflow: "hidden", ...style }}
+            style={{ overflow: "hidden", ...style }}
             {...(dataAttributes ? Object.fromEntries(
               Object.entries(dataAttributes).map(([key, value]) => [`data-${key}`, value])
             ) : {})}

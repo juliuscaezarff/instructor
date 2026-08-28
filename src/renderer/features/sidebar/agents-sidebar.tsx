@@ -20,7 +20,6 @@ import {
   createTeamDialogOpenAtom,
   agentsSettingsDialogActiveTabAtom,
   agentsSidebarOpenAtom,
-  agentsHelpPopoverOpenAtom,
   selectedAgentChatIdsAtom,
   isAgentMultiSelectModeAtom,
   toggleAgentChatSelectionAtom,
@@ -53,6 +52,10 @@ import {
   MoreHorizontal,
   Columns3,
   ArrowUpRight,
+  SquarePen,
+  Home,
+  GitPullRequest,
+  Pin,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { remoteTrpc } from "../../lib/remote-trpc";
@@ -111,11 +114,22 @@ import {
   QuestionIcon,
   KeyboardIcon,
   TicketIcon,
-  CloudIcon,
+  ClaudeCodeLogoIcon,
+  CodexIcon,
 } from "../../components/ui/icons";
+import {
+  PRIcon,
+  type PRState,
+} from "../changes/components/pr-icon/pr-icon";
 import { Logo } from "../../components/ui/logo";
 import { Input } from "../../components/ui/input";
 import { Button } from "../../components/ui/button";
+import { ProjectIcon } from "../../components/ui/project-icon";
+import {
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
+} from "../../components/ui/collapsible";
 import {
   selectedAgentChatIdAtom,
   selectedChatIsRemoteAtom,
@@ -139,8 +153,11 @@ import {
   OPEN_SUB_CHATS_CHANGE_EVENT,
 } from "../agents/stores/sub-chat-store";
 import { getWindowId } from "../../contexts/WindowContext";
-import { AgentsHelpPopover } from "../agents/components/agents-help-popover";
-import { getShortcutKey, isDesktopApp } from "../../lib/utils/platform";
+import {
+  getShortcutKey,
+  isDesktopApp,
+  isMacOS,
+} from "../../lib/utils/platform";
 import {
   useResolvedHotkeyDisplay,
   useResolvedHotkeyDisplayWithAlt,
@@ -362,6 +379,72 @@ const ChatIcon = React.memo(function ChatIcon({
   );
 });
 
+type ChatAgentProvider = "claude-code" | "codex";
+
+const CHAT_AGENT_PRESENTATION: Record<
+  ChatAgentProvider,
+  {
+    label: string;
+    Icon: React.ComponentType<{ className?: string }>;
+  }
+> = {
+  "claude-code": {
+    label: "Claude Code",
+    Icon: ClaudeCodeLogoIcon,
+  },
+  codex: {
+    label: "OpenAI Codex",
+    Icon: CodexIcon,
+  },
+};
+
+const ChatAgentIcon = React.memo(function ChatAgentIcon({
+  provider,
+}: {
+  provider: ChatAgentProvider;
+}) {
+  const { label, Icon } = CHAT_AGENT_PRESENTATION[provider];
+
+  return (
+    <span
+      className="inline-flex h-3 w-3 flex-shrink-0 items-center justify-center text-muted-foreground"
+      role="img"
+      aria-label={label}
+      title={label}
+    >
+      <Icon className="h-3 w-3" />
+    </span>
+  );
+});
+
+const SidebarPrStatusIcon = React.memo(function SidebarPrStatusIcon({
+  chatId,
+}: {
+  chatId: string;
+}) {
+  const { data: status } = trpc.chats.getPrStatus.useQuery(
+    { chatId },
+    {
+      staleTime: 60_000,
+      refetchInterval: 60_000,
+      refetchOnWindowFocus: false,
+    },
+  );
+  const state = (status?.pr?.state ?? "open") as PRState;
+  const label = `Pull request ${state}`;
+
+  return (
+    <span
+      className="inline-flex h-3 w-3 flex-shrink-0 items-center justify-center"
+      role="img"
+      aria-label={label}
+      title={label}
+    >
+      <PRIcon state={state} className="h-3 w-3" />
+    </span>
+  );
+});
+
 // Memoized Draft Item component to prevent re-renders on hover
 const DraftItem = React.memo(function DraftItem({
   draftId,
@@ -479,7 +562,9 @@ const AgentChatItem = React.memo(function AgentChatItem({
   isMobileFullscreen,
   isDesktop,
   isPinned,
-  displayText,
+  agentProvider,
+  chatPrNumber,
+  projectName,
   gitOwner,
   gitProvider,
   stats,
@@ -527,7 +612,9 @@ const AgentChatItem = React.memo(function AgentChatItem({
   isMobileFullscreen: boolean;
   isDesktop: boolean;
   isPinned: boolean;
-  displayText: string;
+  agentProvider: ChatAgentProvider;
+  chatPrNumber: number | null;
+  projectName: string | null;
   gitOwner: string | null | undefined;
   gitProvider: string | null | undefined;
   stats:
@@ -607,7 +694,8 @@ const AgentChatItem = React.memo(function AgentChatItem({
           }}
           onMouseLeave={onMouseLeave}
           className={cn(
-            "w-full text-left py-1.5 cursor-pointer group relative",
+            "w-full text-left cursor-pointer group relative",
+            isPinned ? "py-1" : "py-1.5",
             "transition-colors duration-75",
             "outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70",
             // In multi-select: px-3 compensates for removed container px-2, keeping text aligned
@@ -627,6 +715,73 @@ const AgentChatItem = React.memo(function AgentChatItem({
                 : "bg-primary/10 hover:bg-primary/15"),
           )}
         >
+          {isPinned ? (
+            <div className="flex min-w-0 items-center gap-1.5">
+              {isMultiSelectMode && (
+                <ChatIcon
+                  isSelected={isSelected}
+                  isLoading={isLoading}
+                  hasUnseenChanges={hasUnseenChanges}
+                  hasPendingPlan={hasPendingPlan}
+                  hasPendingQuestion={hasPendingQuestion}
+                  isMultiSelectMode={true}
+                  isChecked={isChecked}
+                  onCheckboxClick={(e) => onCheckboxClick(e, chatId)}
+                  gitOwner={gitOwner}
+                  gitProvider={gitProvider}
+                  showIcon={showIcon}
+                />
+              )}
+              {chatPrNumber !== null && (
+                <SidebarPrStatusIcon chatId={chatId} />
+              )}
+              <ChatAgentIcon provider={agentProvider} />
+              <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                <span
+                  ref={(el) => nameRefCallback(chatId, el)}
+                  className="min-w-0 truncate text-xs leading-tight"
+                  title={chatName || "New workspace"}
+                >
+                  <TypewriterText
+                    text={chatName || ""}
+                    placeholder="New workspace"
+                    id={chatId}
+                    isJustCreated={isJustCreated}
+                    showPlaceholder={true}
+                  />
+                </span>
+                {projectName && (
+                  <span
+                    className="max-w-[35%] flex-shrink-0 truncate text-[11px] text-muted-foreground/60"
+                    title={projectName}
+                  >
+                    {projectName}
+                  </span>
+                )}
+              </div>
+              <div className="relative flex h-4 flex-shrink-0 items-center text-[11px] tabular-nums text-muted-foreground/60">
+                <span className="transition-opacity duration-150 group-hover:opacity-0">
+                  {formatTime(
+                    chatUpdatedAt?.toISOString() ?? new Date().toISOString(),
+                  )}
+                </span>
+                {!isMultiSelectMode && !isMobileFullscreen && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onTogglePin(chatId);
+                    }}
+                    tabIndex={-1}
+                    className="absolute inset-0 flex items-center justify-end text-muted-foreground opacity-0 transition-[opacity,color] duration-150 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto hover:text-foreground"
+                    aria-label="Unpin workspace"
+                    title="Unpin workspace"
+                  >
+                    <Pin className="h-3.5 w-3.5 fill-current" />
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
           <div className="flex items-start gap-2.5">
             {/* Icon container - only render if showIcon or in multi-select mode */}
             {(showIcon || isMultiSelectMode) && (
@@ -736,11 +891,14 @@ const AgentChatItem = React.memo(function AgentChatItem({
                 )}
               </div>
               <div className="flex items-center gap-1 text-[11px] text-muted-foreground/60 min-w-0">
-                {/* Cloud icon for remote chats */}
-                {isRemote && (
-                  <CloudIcon className="h-2.5 w-2.5 flex-shrink-0" />
+                {chatPrNumber !== null && (
+                  <SidebarPrStatusIcon chatId={chatId} />
                 )}
-                <span className="truncate flex-1 min-w-0">{displayText}</span>
+                <ChatAgentIcon provider={agentProvider} />
+                {chatBranch && (
+                  <span className="truncate flex-1 min-w-0">{chatBranch}</span>
+                )}
+                {!chatBranch && <span className="flex-1 min-w-0" />}
                 <div className="flex items-center gap-1.5 flex-shrink-0">
                   {stats && (stats.additions > 0 || stats.deletions > 0) && (
                     <>
@@ -761,6 +919,7 @@ const AgentChatItem = React.memo(function AgentChatItem({
               </div>
             </div>
           </div>
+          )}
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-48">
@@ -996,13 +1155,15 @@ function chatListSectionPropsAreEqual(
 }
 
 interface ChatListSectionProps {
-  title: string;
+  title?: string;
   chats: Array<{
     id: string;
     name: string | null;
     branch: string | null;
     updatedAt: Date | null;
     projectId: string | null;
+    prNumber: number | null;
+    agentProvider: ChatAgentProvider;
     isRemote: boolean;
     meta?: { repository?: string; branch?: string | null } | null;
     remoteStats?: {
@@ -1127,16 +1288,18 @@ const ChatListSection = React.memo(function ChatListSection({
 
   return (
     <>
-      <div
-        className={cn(
-          "flex items-center h-4 mb-1",
-          isMultiSelectMode ? "pl-3" : "pl-2",
-        )}
-      >
-        <h3 className="text-xs font-medium text-muted-foreground whitespace-nowrap">
-          {title}
-        </h3>
-      </div>
+      {title && (
+        <div
+          className={cn(
+            "flex items-center h-4 mb-2",
+            isMultiSelectMode ? "pl-3" : "pl-2",
+          )}
+        >
+          <h3 className="text-xs font-medium text-muted-foreground whitespace-nowrap">
+            {title}
+          </h3>
+        </div>
+      )}
       <div className="list-none p-0 m-0 mb-3">
         {chats.map((chat) => {
           const isLoading = loadingChatIds.has(chat.id);
@@ -1157,14 +1320,6 @@ const ChatListSection = React.memo(function ChatListSection({
           const project = chat.projectId
             ? projectsMap.get(chat.projectId)
             : null;
-          const repoName = chat.isRemote
-            ? chat.meta?.repository
-            : project?.gitRepo || project?.name;
-          const displayText = chat.branch
-            ? repoName
-              ? `${repoName} • ${chat.branch}`
-              : chat.branch
-            : repoName || (chat.isRemote ? "Remote project" : "Local project");
 
           const isChecked = selectedChatIds.has(chat.id);
           // TODO: remote stats disabled — backend no longer computes them (was causing 50s+ loads)
@@ -1181,6 +1336,9 @@ const ChatListSection = React.memo(function ChatListSection({
             ? chat.meta?.repository?.split("/")[0]
             : project?.gitOwner;
           const gitProvider = chat.isRemote ? "github" : project?.gitProvider;
+          const projectName = chat.isRemote
+            ? (chat.meta?.repository?.split("/").pop() ?? null)
+            : (project?.name ?? null);
 
           return (
             <AgentChatItem
@@ -1202,7 +1360,9 @@ const ChatListSection = React.memo(function ChatListSection({
               isMobileFullscreen={isMobileFullscreen}
               isDesktop={isDesktop}
               isPinned={isPinned}
-              displayText={displayText}
+              agentProvider={chat.agentProvider}
+              chatPrNumber={chat.prNumber}
+              projectName={projectName}
               gitOwner={gitOwner}
               gitProvider={gitProvider}
               stats={stats ?? undefined}
@@ -1240,6 +1400,65 @@ const ChatListSection = React.memo(function ChatListSection({
   );
 }, chatListSectionPropsAreEqual);
 
+// One collapsible "folder" per project inside the Activity feed
+interface ProjectChatGroupProps extends Omit<ChatListSectionProps, "title"> {
+  project: {
+    id: string;
+    name?: string | null;
+    iconPath?: string | null;
+    updatedAt?: string | Date | null;
+    gitOwner?: string | null;
+    gitProvider?: string | null;
+  } | null;
+  isCollapsed: boolean;
+  onToggleCollapsed: (projectId: string) => void;
+}
+
+const ProjectChatGroup = React.memo(function ProjectChatGroup({
+  project,
+  isCollapsed,
+  onToggleCollapsed,
+  chats,
+  ...chatListSectionProps
+}: ProjectChatGroupProps) {
+  if (chats.length === 0) return null;
+
+  const groupId = project?.id ?? "no-project";
+  const groupName = project?.name ?? "Other";
+
+  return (
+    <Collapsible
+      open={!isCollapsed}
+      onOpenChange={() => onToggleCollapsed(groupId)}
+      className="mb-2"
+    >
+      <CollapsibleTrigger asChild>
+        <button
+          type="button"
+          className="flex h-7 w-full items-center gap-2 rounded-md pl-2 pr-1 mb-1 text-muted-foreground transition-colors duration-150 hover:bg-muted/50 hover:text-foreground"
+        >
+          <ChevronDown
+            className={cn(
+              "h-3 w-3 flex-shrink-0 transition-transform duration-150",
+              isCollapsed && "-rotate-90",
+            )}
+          />
+          <ProjectIcon project={project} className="h-5 w-5" />
+          <span className="text-xs font-medium truncate flex-1 text-left">
+            {groupName}
+          </span>
+          <span className="min-w-4 flex-shrink-0 text-center text-xs font-medium tabular-nums text-muted-foreground/80">
+            {chats.length}
+          </span>
+        </button>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <ChatListSection chats={chats} {...chatListSectionProps} />
+      </CollapsibleContent>
+    </Collapsible>
+  );
+});
+
 interface AgentsSidebarProps {
   userId?: string | null | undefined;
   clerkUser?: any;
@@ -1250,66 +1469,44 @@ interface AgentsSidebarProps {
   onChatSelect?: () => void;
 }
 
-// Memoized Archive Button to prevent re-creation on every sidebar render
-const ArchiveButton = memo(
-  forwardRef<HTMLButtonElement, React.ButtonHTMLAttributes<HTMLButtonElement>>(
-    function ArchiveButton(props, ref) {
-      return (
-        <button
-          ref={ref}
-          type="button"
-          className="flex items-center justify-center h-7 w-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.97] outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70"
-          {...props}
-        >
-          <ArchiveIcon className="h-4 w-4" />
-        </button>
-      );
-    },
-  ),
-);
+// Header nav row - shared visual for New thread / Home / Pull requests / Kanban
+interface SidebarNavItemProps {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  isActive: boolean;
+  onClick: () => void;
+  tooltip?: React.ReactNode;
+}
 
-// Isolated Kanban Button - clears selection to show Kanban view
-const KanbanButton = memo(function KanbanButton() {
-  const kanbanEnabled = useAtomValue(betaKanbanEnabledAtom);
-  const setSelectedChatId = useSetAtom(selectedAgentChatIdAtom);
-  const setSelectedDraftId = useSetAtom(selectedDraftIdAtom);
-  const setShowNewChatForm = useSetAtom(showNewChatFormAtom);
-  const setDesktopView = useSetAtom(desktopViewAtom);
+const SidebarNavItem = memo(function SidebarNavItem({
+  icon: Icon,
+  label,
+  isActive,
+  onClick,
+  tooltip,
+}: SidebarNavItemProps) {
+  const button = (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex items-center gap-2 h-7 w-full px-2 rounded-md text-sm transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.97] outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70",
+        isActive
+          ? "bg-accent text-foreground"
+          : "text-muted-foreground hover:text-foreground hover:bg-accent/60",
+      )}
+    >
+      <Icon className="h-4 w-4 flex-shrink-0" />
+      <span className="flex-1 text-left truncate font-medium">{label}</span>
+    </button>
+  );
 
-  // Resolved hotkey for tooltip (respects custom bindings)
-  const openKanbanHotkey = useResolvedHotkeyDisplay("open-kanban");
-
-  const handleClick = useCallback(() => {
-    // Clear selected chat, draft, and new form state to show Kanban view
-    setSelectedChatId(null);
-    setSelectedDraftId(null);
-    setShowNewChatForm(false);
-    setDesktopView(null); // Clear automations/inbox view
-  }, [
-    setSelectedChatId,
-    setSelectedDraftId,
-    setShowNewChatForm,
-    setDesktopView,
-  ]);
-
-  // Hide button if feature is disabled
-  if (!kanbanEnabled) return null;
+  if (!tooltip) return button;
 
   return (
     <Tooltip delayDuration={500}>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          onClick={handleClick}
-          className="flex items-center justify-center h-7 w-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.97] outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70"
-        >
-          <Columns3 className="h-4 w-4" />
-        </button>
-      </TooltipTrigger>
-      <TooltipContent>
-        Kanban View
-        {openKanbanHotkey && <Kbd>{openKanbanHotkey}</Kbd>}
-      </TooltipContent>
+      <TooltipTrigger asChild>{button}</TooltipTrigger>
+      <TooltipContent side="right">{tooltip}</TooltipContent>
     </Tooltip>
   );
 });
@@ -1431,47 +1628,6 @@ const AutomationsButton = memo(function AutomationsButton() {
 
 // Isolated Archive Section - subscribes to archivePopoverOpenAtom internally
 // to prevent sidebar re-renders when popover opens/closes
-interface ArchiveSectionProps {
-  archivedChatsCount: number;
-}
-
-const ArchiveSection = memo(function ArchiveSection({
-  archivedChatsCount,
-}: ArchiveSectionProps) {
-  const archivePopoverOpen = useAtomValue(archivePopoverOpenAtom);
-  const [blockArchiveTooltip, setBlockArchiveTooltip] = useState(false);
-  const prevArchivePopoverOpen = useRef(false);
-  const archiveButtonRef = useRef<HTMLButtonElement>(null);
-
-  // Handle tooltip blocking when popover closes
-  useEffect(() => {
-    if (prevArchivePopoverOpen.current && !archivePopoverOpen) {
-      archiveButtonRef.current?.blur();
-      setBlockArchiveTooltip(true);
-      const timer = setTimeout(() => setBlockArchiveTooltip(false), 300);
-      prevArchivePopoverOpen.current = archivePopoverOpen;
-      return () => clearTimeout(timer);
-    }
-    prevArchivePopoverOpen.current = archivePopoverOpen;
-  }, [archivePopoverOpen]);
-
-  if (archivedChatsCount === 0) return null;
-
-  return (
-    <Tooltip
-      delayDuration={500}
-      open={archivePopoverOpen || blockArchiveTooltip ? false : undefined}
-    >
-      <TooltipTrigger asChild>
-        <div>
-          <ArchivePopover trigger={<ArchiveButton ref={archiveButtonRef} />} />
-        </div>
-      </TooltipTrigger>
-      <TooltipContent>Archive</TooltipContent>
-    </Tooltip>
-  );
-});
-
 // Isolated Sidebar Header - contains dropdown, traffic lights, close button
 // Subscribes to dropdown state internally to prevent sidebar re-renders
 interface SidebarHeaderProps {
@@ -1485,9 +1641,10 @@ interface SidebarHeaderProps {
   setSettingsDialogOpen: (open: boolean) => void;
   setSettingsActiveTab: (tab: string) => void;
   setShowAuthDialog: (open: boolean) => void;
-  handleSidebarMouseEnter: () => void;
-  handleSidebarMouseLeave: () => void;
-  closeButtonRef: React.RefObject<HTMLDivElement>;
+  searchOpen: boolean;
+  onToggleSearch: () => void;
+  archivedChatsCount: number;
+  onOpenArchive: () => void;
 }
 
 const SidebarHeader = memo(function SidebarHeader({
@@ -1501,22 +1658,22 @@ const SidebarHeader = memo(function SidebarHeader({
   setSettingsDialogOpen,
   setSettingsActiveTab,
   setShowAuthDialog,
-  handleSidebarMouseEnter,
-  handleSidebarMouseLeave,
-  closeButtonRef,
+  searchOpen,
+  onToggleSearch,
+  archivedChatsCount,
+  onOpenArchive,
 }: SidebarHeaderProps) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const showOfflineFeatures = useAtomValue(showOfflineModeFeaturesAtom);
   const toggleSidebarHotkey = useResolvedHotkeyDisplay("toggle-sidebar");
 
   return (
-    <div
-      className="relative flex-shrink-0"
-      onMouseEnter={handleSidebarMouseEnter}
-      onMouseLeave={handleSidebarMouseLeave}
-    >
-      {/* Draggable area for window movement - background layer (hidden in fullscreen) */}
-      {isDesktop && !isFullscreen && (
+    <div className="relative flex-shrink-0">
+      {/* Draggable area for window movement - background layer (hidden in fullscreen).
+          macOS only: Windows already gets its drag region from WindowsTitleBar, and
+          without the traffic-light spacer pushing content down there, this band would
+          sit on top of (and swallow clicks on) the team dropdown / search / close buttons. */}
+      {isDesktop && isMacOS() && !isFullscreen && (
         <div
           className="absolute inset-x-0 top-0 h-[32px] z-0"
           style={{
@@ -1527,50 +1684,18 @@ const SidebarHeader = memo(function SidebarHeader({
         />
       )}
 
-      {/* No-drag zone over native traffic lights */}
+      {/* No-drag zone over native traffic lights (macOS only - Windows uses WindowsTitleBar) */}
       <TrafficLights
         isFullscreen={isFullscreen}
-        isDesktop={isDesktop}
+        isDesktop={isDesktop && isMacOS()}
         className="absolute left-[15px] top-[12px] z-20"
       />
 
-      {/* Close button - positioned at top right */}
-      {!isMobileFullscreen && (
-        <div
-          ref={closeButtonRef}
-          className={cn(
-            "absolute right-2 z-20 transition-opacity duration-150",
-            "top-2",
-          )}
-          style={{
-            opacity: isDropdownOpen ? 1 : 0,
-            // @ts-expect-error - WebKit-specific property
-            WebkitAppRegion: "no-drag",
-          }}
-        >
-          <Tooltip delayDuration={500}>
-            <TooltipTrigger asChild>
-              <ButtonCustom
-                variant="ghost"
-                size="icon"
-                onClick={onToggleSidebar}
-                tabIndex={-1}
-                className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] text-foreground flex-shrink-0 rounded-md"
-                aria-label="Close sidebar"
-              >
-                <IconDoubleChevronLeft className="h-4 w-4" />
-              </ButtonCustom>
-            </TooltipTrigger>
-            <TooltipContent>
-              Close sidebar
-              {toggleSidebarHotkey && <Kbd>{toggleSidebarHotkey}</Kbd>}
-            </TooltipContent>
-          </Tooltip>
-        </div>
-      )}
-
-      {/* Spacer for macOS traffic lights */}
-      <TrafficLightSpacer isFullscreen={isFullscreen} isDesktop={isDesktop} />
+      {/* Spacer for macOS traffic lights (Windows already has its own title bar) */}
+      <TrafficLightSpacer
+        isFullscreen={isFullscreen}
+        isDesktop={isDesktop && isMacOS()}
+      />
 
       {/* Team dropdown - below traffic lights */}
       <div className="px-2 pt-2 pb-2">
@@ -1583,15 +1708,15 @@ const SidebarHeader = memo(function SidebarHeader({
               <DropdownMenuTrigger asChild>
                 <ButtonCustom
                   variant="ghost"
-                  className="h-6 px-1.5 justify-start hover:bg-foreground/10 rounded-md group/team-button max-w-full"
+                  className="h-8 px-2 justify-start hover:bg-foreground/10 rounded-md group/team-button max-w-full"
                   suppressHydrationWarning
                 >
-                  <div className="flex items-center gap-1.5 min-w-0 max-w-full">
+                  <div className="flex items-center gap-2 min-w-0 max-w-full">
                     <div className="flex items-center justify-center flex-shrink-0">
-                      <Logo className="w-5 h-5" />
+                      <Logo className="w-7 h-7" />
                     </div>
                     <div className="min-w-0 flex-1 overflow-hidden">
-                      <div className="text-sm font-medium text-foreground truncate">
+                      <div className="text-base font-semibold leading-none text-foreground truncate">
                         Instructor
                       </div>
                     </div>
@@ -1600,20 +1725,13 @@ const SidebarHeader = memo(function SidebarHeader({
                         <NetworkStatus />
                       </div>
                     )}
-                    <ChevronDown
-                      className={cn(
-                        "h-3 text-muted-foreground flex-shrink-0 overflow-hidden",
-                        isDropdownOpen
-                          ? "opacity-100 w-3"
-                          : "opacity-0 w-0 group-hover/team-button:opacity-100 group-hover/team-button:w-3",
-                      )}
-                    />
+                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
                   </div>
                 </ButtonCustom>
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 align="start"
-                className="w-52 pt-0"
+                className="w-48 pt-0"
                 sideOffset={8}
               >
                 {userId ? (
@@ -1623,8 +1741,8 @@ const SidebarHeader = memo(function SidebarHeader({
                       <div className="absolute inset-0 bg-popover brightness-110" />
                       <div className="relative pl-2 pt-1.5 pb-2">
                         <div className="flex items-center gap-2 min-w-0">
-                          <div className="w-8 h-8 rounded flex items-center justify-center bg-background flex-shrink-0 overflow-hidden">
-                            <Logo className="w-7 h-7" />
+                          <div className="flex items-center justify-center flex-shrink-0">
+                            <Logo className="w-6 h-6" />
                           </div>
                           <div className="flex-1 min-w-0 overflow-hidden">
                             <div className="font-medium text-sm text-foreground truncate">
@@ -1640,7 +1758,7 @@ const SidebarHeader = memo(function SidebarHeader({
 
                     {/* Settings */}
                     <DropdownMenuItem
-                      className="gap-2 mt-1"
+                      className="gap-2 mt-1 min-h-[28px] py-1"
                       onSelect={() => {
                         setIsDropdownOpen(false);
                         setSettingsActiveTab("preferences");
@@ -1653,7 +1771,7 @@ const SidebarHeader = memo(function SidebarHeader({
 
                     {/* Help Submenu */}
                     <DropdownMenuSub>
-                      <DropdownMenuSubTrigger className="gap-2">
+                      <DropdownMenuSubTrigger className="gap-2 min-h-[28px] py-1">
                         <QuestionCircleIcon className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
                         <span className="flex-1">Help</span>
                       </DropdownMenuSubTrigger>
@@ -1670,7 +1788,7 @@ const SidebarHeader = memo(function SidebarHeader({
                             );
                             setIsDropdownOpen(false);
                           }}
-                          className="gap-2"
+                          className="gap-2 min-h-[28px] py-1"
                         >
                           <DiscordIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                           <span className="flex-1">Discord</span>
@@ -1682,7 +1800,7 @@ const SidebarHeader = memo(function SidebarHeader({
                               setSettingsActiveTab("keyboard");
                               setSettingsDialogOpen(true);
                             }}
-                            className="gap-2"
+                            className="gap-2 min-h-[28px] py-1"
                           >
                             <KeyboardIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                             <span className="flex-1">Shortcuts</span>
@@ -1691,12 +1809,41 @@ const SidebarHeader = memo(function SidebarHeader({
                       </DropdownMenuSubContent>
                     </DropdownMenuSub>
 
+                    {/* Archived chats */}
+                    <DropdownMenuItem
+                      className="gap-2 min-h-[28px] py-1"
+                      onSelect={() => {
+                        setIsDropdownOpen(false);
+                        onOpenArchive();
+                      }}
+                    >
+                      <ArchiveIcon className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                      <span className="flex-1">Archived chats</span>
+                      {archivedChatsCount > 0 && (
+                        <span className="text-xs text-muted-foreground">
+                          {archivedChatsCount}
+                        </span>
+                      )}
+                    </DropdownMenuItem>
+
+                    {/* Send feedback */}
+                    <DropdownMenuItem
+                      className="gap-2 min-h-[28px] py-1"
+                      onSelect={() => {
+                        setIsDropdownOpen(false);
+                        window.open(FEEDBACK_URL, "_blank");
+                      }}
+                    >
+                      <QuestionCircleIcon className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                      <span className="flex-1">Send feedback</span>
+                    </DropdownMenuItem>
+
                     <DropdownMenuSeparator />
 
                     {/* Log out */}
                     <div className="">
                       <DropdownMenuItem
-                        className="gap-2"
+                        className="gap-2 min-h-[28px] py-1"
                         onSelect={() => onSignOut()}
                       >
                         <svg
@@ -1739,7 +1886,7 @@ const SidebarHeader = memo(function SidebarHeader({
                     {/* Login for unauthenticated users */}
                     <div className="">
                       <DropdownMenuItem
-                        className="gap-2"
+                        className="gap-2 min-h-[28px] py-1"
                         onSelect={() => {
                           setIsDropdownOpen(false);
                           setShowAuthDialog(true);
@@ -1754,7 +1901,7 @@ const SidebarHeader = memo(function SidebarHeader({
 
                     {/* Help Submenu */}
                     <DropdownMenuSub>
-                      <DropdownMenuSubTrigger className="gap-2">
+                      <DropdownMenuSubTrigger className="gap-2 min-h-[28px] py-1">
                         <QuestionCircleIcon className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
                         <span className="flex-1">Help</span>
                       </DropdownMenuSubTrigger>
@@ -1771,7 +1918,7 @@ const SidebarHeader = memo(function SidebarHeader({
                             );
                             setIsDropdownOpen(false);
                           }}
-                          className="gap-2"
+                          className="gap-2 min-h-[28px] py-1"
                         >
                           <DiscordIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                           <span className="flex-1">Discord</span>
@@ -1783,7 +1930,7 @@ const SidebarHeader = memo(function SidebarHeader({
                               setSettingsActiveTab("keyboard");
                               setSettingsDialogOpen(true);
                             }}
-                            className="gap-2"
+                            className="gap-2 min-h-[28px] py-1"
                           >
                             <KeyboardIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                             <span className="flex-1">Shortcuts</span>
@@ -1796,63 +1943,58 @@ const SidebarHeader = memo(function SidebarHeader({
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
+
+          {/* Search toggle */}
+          <Tooltip delayDuration={500}>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={onToggleSearch}
+                className={cn(
+                  "flex items-center justify-center h-6 w-6 rounded-md transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.97] outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70",
+                  searchOpen
+                    ? "bg-foreground/10 text-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-foreground/10",
+                )}
+                style={{
+                  // @ts-expect-error - WebKit-specific property
+                  WebkitAppRegion: "no-drag",
+                }}
+                aria-label="Search chats"
+              >
+                <SearchIcon className="h-3.5 w-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Search</TooltipContent>
+          </Tooltip>
+
+          {/* Close sidebar - always visible */}
+          {!isMobileFullscreen && (
+            <Tooltip delayDuration={500}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={onToggleSidebar}
+                  tabIndex={-1}
+                  className="flex items-center justify-center h-6 w-6 rounded-md text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.97]"
+                  style={{
+                    // @ts-expect-error - WebKit-specific property
+                    WebkitAppRegion: "no-drag",
+                  }}
+                  aria-label="Close sidebar"
+                >
+                  <IconDoubleChevronLeft className="h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Close sidebar
+                {toggleSidebarHotkey && <Kbd>{toggleSidebarHotkey}</Kbd>}
+              </TooltipContent>
+            </Tooltip>
+          )}
         </div>
       </div>
     </div>
-  );
-});
-
-// Isolated Help Section - subscribes to agentsHelpPopoverOpenAtom internally
-// to prevent sidebar re-renders when popover opens/closes
-interface HelpSectionProps {
-  isMobile: boolean;
-}
-
-const HelpSection = memo(function HelpSection({ isMobile }: HelpSectionProps) {
-  const [helpPopoverOpen, setHelpPopoverOpen] = useAtom(
-    agentsHelpPopoverOpenAtom,
-  );
-  const [blockHelpTooltip, setBlockHelpTooltip] = useState(false);
-  const prevHelpPopoverOpen = useRef(false);
-  const helpButtonRef = useRef<HTMLButtonElement>(null);
-
-  // Handle tooltip blocking when popover closes
-  useEffect(() => {
-    if (prevHelpPopoverOpen.current && !helpPopoverOpen) {
-      helpButtonRef.current?.blur();
-      setBlockHelpTooltip(true);
-      const timer = setTimeout(() => setBlockHelpTooltip(false), 300);
-      prevHelpPopoverOpen.current = helpPopoverOpen;
-      return () => clearTimeout(timer);
-    }
-    prevHelpPopoverOpen.current = helpPopoverOpen;
-  }, [helpPopoverOpen]);
-
-  return (
-    <Tooltip
-      delayDuration={500}
-      open={helpPopoverOpen || blockHelpTooltip ? false : undefined}
-    >
-      <TooltipTrigger asChild>
-        <div>
-          <AgentsHelpPopover
-            open={helpPopoverOpen}
-            onOpenChange={setHelpPopoverOpen}
-            isMobile={isMobile}
-          >
-            <button
-              ref={helpButtonRef}
-              type="button"
-              className="flex items-center justify-center h-7 w-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.97] outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70"
-              suppressHydrationWarning
-            >
-              <QuestionCircleIcon className="h-4 w-4" />
-            </button>
-          </AgentsHelpPopover>
-        </div>
-      </TooltipTrigger>
-      <TooltipContent>Help</TooltipContent>
-    </Tooltip>
   );
 });
 
@@ -1880,9 +2022,6 @@ export function AgentsSidebar({
   const setDesktopView = useSetAtom(desktopViewAtom);
   const [loadingSubChats] = useAtom(loadingSubChatsAtom);
   const pendingQuestions = useAtomValue(pendingUserQuestionsAtom);
-  // Use ref instead of state to avoid re-renders on hover
-  const isSidebarHoveredRef = useRef(false);
-  const closeButtonRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [focusedChatIndex, setFocusedChatIndex] = useState<number>(-1); // -1 means no focus
   const hoveredChatIndexRef = useRef<number>(-1); // Track hovered chat for X hotkey - ref to avoid re-renders
@@ -1948,6 +2087,81 @@ export function AgentsSidebar({
   // Pinned chats (stored in localStorage per project)
   const [pinnedChatIds, setPinnedChatIds] = useState<Set<string>>(new Set());
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Header search toggle (search input stays hidden until the icon is clicked)
+  const [searchOpen, setSearchOpen] = useState(false);
+  const toggleSearch = useCallback(() => {
+    setSearchOpen((prev) => !prev);
+  }, []);
+
+  // Header nav row active state (visual only for Home/Pull requests, Kanban is wired below)
+  const [activeNav, setActiveNav] = useState<
+    "home" | "pull-requests" | "kanban"
+  >("home");
+
+  // Collapsed project groups in the Activity feed (stored in localStorage)
+  const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const toggleProjectCollapsed = useCallback((projectId: string) => {
+    setCollapsedProjectIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(projectId)) {
+        next.delete(projectId);
+      } else {
+        next.add(projectId);
+      }
+      try {
+        localStorage.setItem(
+          `${getWindowId()}:agent-collapsed-projects`,
+          JSON.stringify([...next]),
+        );
+      } catch {
+        // Ignore storage errors
+      }
+      return next;
+    });
+  }, []);
+
+  // Restore collapsed project groups from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(
+        `${getWindowId()}:agent-collapsed-projects`,
+      );
+      if (stored) {
+        setCollapsedProjectIds(new Set(JSON.parse(stored) as string[]));
+      }
+    } catch {
+      // Ignore storage errors
+    }
+  }, []);
+
+  const kanbanEnabled = useAtomValue(betaKanbanEnabledAtom);
+  const openKanbanHotkey = useResolvedHotkeyDisplay("open-kanban");
+  const handleOpenKanban = useCallback(() => {
+    setActiveNav("kanban");
+    setSelectedChatId(null);
+    setSelectedDraftId(null);
+    setShowNewChatForm(false);
+    setDesktopView(null);
+  }, [setSelectedChatId, setSelectedDraftId, setShowNewChatForm, setDesktopView]);
+
+  // Focus the search input when it's toggled open
+  useEffect(() => {
+    if (searchOpen) {
+      searchInputRef.current?.focus();
+    } else {
+      setSearchQuery("");
+    }
+  }, [searchOpen]);
+
+  // Opens the archive popover from the logo/team dropdown menu
+  const setArchivePopoverOpen = useSetAtom(archivePopoverOpenAtom);
+  const handleOpenArchive = useCallback(() => {
+    // Deferred so the closing team dropdown doesn't unmount before the popover opens
+    setTimeout(() => setArchivePopoverOpen(true), 0);
+  }, [setArchivePopoverOpen]);
 
   // Agent name tooltip refs (for truncated names) - using DOM manipulation to avoid re-renders
   const agentTooltipRef = useRef<HTMLDivElement>(null);
@@ -2032,6 +2246,7 @@ export function AgentsSidebar({
       baseBranch: string | null;
       prUrl: string | null;
       prNumber: number | null;
+      agentProvider: ChatAgentProvider;
       sandboxId?: string | null;
       meta?: { repository?: string; branch?: string | null } | null;
       isRemote: boolean;
@@ -2057,6 +2272,7 @@ export function AgentsSidebar({
           baseBranch: chat.baseBranch,
           prUrl: chat.prUrl,
           prNumber: chat.prNumber,
+          agentProvider: chat.agentProvider,
           isRemote: false,
         });
       }
@@ -2077,6 +2293,7 @@ export function AgentsSidebar({
           baseBranch: null,
           prUrl: null,
           prNumber: null,
+          agentProvider: "claude-code",
           sandboxId: chat.sandbox_id,
           meta: chat.meta,
           isRemote: true,
@@ -2569,6 +2786,27 @@ export function AgentsSidebar({
       filteredChats: [...pinned, ...unpinned],
     };
   }, [searchQuery, agentChats, pinnedChatIds]);
+
+  // Group the Activity feed (unpinned chats) by project - order follows first
+  // appearance in unpinnedAgents, which is already sorted newest-first
+  const NO_PROJECT_KEY = "__no_project__";
+  const projectGroups = useMemo(() => {
+    const order: string[] = [];
+    const buckets = new Map<string, typeof unpinnedAgents>();
+    for (const chat of unpinnedAgents) {
+      const key = chat.projectId ?? NO_PROJECT_KEY;
+      if (!buckets.has(key)) {
+        buckets.set(key, []);
+        order.push(key);
+      }
+      buckets.get(key)!.push(chat);
+    }
+    return order.map((key) => ({
+      groupId: key,
+      project: key === NO_PROJECT_KEY ? null : (projectsMap.get(key) ?? null),
+      chats: buckets.get(key)!,
+    }));
+  }, [unpinnedAgents, projectsMap]);
 
   // Handle bulk archive of selected chats
   const handleBulkArchive = useCallback(() => {
@@ -3252,36 +3490,6 @@ export function AgentsSidebar({
     }
   }, []);
 
-  // Update sidebar hover UI - DOM manipulation for close button, state for TrafficLights
-  // TrafficLights component handles native traffic light visibility via its own effect
-  // Update sidebar hover UI via DOM manipulation (no state update to avoid re-renders)
-  const updateSidebarHoverUI = useCallback((hovered: boolean) => {
-    isSidebarHoveredRef.current = hovered;
-    // Update close button opacity
-    if (closeButtonRef.current) {
-      closeButtonRef.current.style.opacity = hovered ? "1" : "0";
-    }
-  }, []);
-
-  const handleSidebarMouseEnter = useCallback(() => {
-    updateSidebarHoverUI(true);
-  }, [updateSidebarHoverUI]);
-
-  const handleSidebarMouseLeave = useCallback(
-    (e: React.MouseEvent) => {
-      // Electron's drag region (WebkitAppRegion: "drag") returns a non-HTMLElement
-      // object as relatedTarget. We preserve hover state in this case so the
-      // traffic lights remain visible when hovering over the drag area.
-      const relatedTarget = e.relatedTarget;
-      if (!relatedTarget || !(relatedTarget instanceof HTMLElement)) return;
-      const isStillInSidebar = relatedTarget.closest("[data-sidebar-content]");
-      if (!isStillInSidebar) {
-        updateSidebarHoverUI(false);
-      }
-    },
-    [updateSidebarHoverUI],
-  );
-
   // Check if scroll is needed and show/hide gradients via DOM manipulation
   React.useEffect(() => {
     const container = scrollContainerRef.current;
@@ -3476,8 +3684,6 @@ export function AgentsSidebar({
           ? "h-full w-full bg-background"
           : "h-full bg-tl-background",
       )}
-      onMouseEnter={handleSidebarMouseEnter}
-      onMouseLeave={handleSidebarMouseLeave}
       data-mobile-fullscreen={isMobileFullscreen || undefined}
       data-sidebar-content
     >
@@ -3493,15 +3699,15 @@ export function AgentsSidebar({
         setSettingsDialogOpen={setSettingsDialogOpen}
         setSettingsActiveTab={setSettingsActiveTab}
         setShowAuthDialog={setShowAuthDialog}
-        handleSidebarMouseEnter={handleSidebarMouseEnter}
-        handleSidebarMouseLeave={handleSidebarMouseLeave}
-        closeButtonRef={closeButtonRef}
+        searchOpen={searchOpen}
+        onToggleSearch={toggleSearch}
+        archivedChatsCount={archivedChatsCount}
+        onOpenArchive={handleOpenArchive}
       />
 
-      {/* Search and New Workspace */}
-      <div className="px-2 pb-3 flex-shrink-0">
-        <div className="space-y-2">
-          {/* Search Input */}
+      {/* Search input - only rendered when toggled open from the header icon */}
+      {searchOpen && (
+        <div className="px-2 pb-3 flex-shrink-0">
           <div className="relative">
             <Input
               ref={searchInputRef}
@@ -3558,25 +3764,18 @@ export function AgentsSidebar({
               )}
             />
           </div>
-          {/* New Workspace Button */}
-          <Tooltip delayDuration={500}>
-            <TooltipTrigger asChild>
-              <ButtonCustom
-                onClick={handleNewAgent}
-                variant="outline"
-                size="sm"
-                className={cn(
-                  "px-2 w-full hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] text-foreground rounded-lg gap-1.5",
-                  isMobileFullscreen ? "h-10" : "h-7",
-                )}
-              >
-                <span className="text-sm font-medium">New Workspace</span>
-              </ButtonCustom>
-            </TooltipTrigger>
-            <TooltipContent
-              side="right"
-              className="flex flex-col items-start gap-1"
-            >
+        </div>
+      )}
+
+      {/* Nav rows - New thread / Home / Pull requests / Kanban */}
+      <div className="px-2 pt-2 pb-3 flex-shrink-0 space-y-0.5">
+        <SidebarNavItem
+          icon={SquarePen}
+          label="New thread"
+          isActive={false}
+          onClick={handleNewAgent}
+          tooltip={
+            <span className="flex flex-col items-start gap-1">
               <span>Start a new workspace</span>
               {newWorkspaceHotkey && (
                 <span className="flex items-center gap-1.5">
@@ -3589,9 +3788,36 @@ export function AgentsSidebar({
                   )}
                 </span>
               )}
-            </TooltipContent>
-          </Tooltip>
-        </div>
+            </span>
+          }
+        />
+        <SidebarNavItem
+          icon={Home}
+          label="Home"
+          isActive={activeNav === "home"}
+          onClick={() => setActiveNav("home")}
+        />
+        <SidebarNavItem
+          icon={GitPullRequest}
+          label="Pull requests"
+          isActive={activeNav === "pull-requests"}
+          onClick={() => setActiveNav("pull-requests")}
+        />
+        {kanbanEnabled && (
+          <SidebarNavItem
+            icon={Columns3}
+            label="Kanban"
+            isActive={activeNav === "kanban"}
+            onClick={handleOpenKanban}
+            tooltip={
+              openKanbanHotkey ? (
+                <span className="flex items-center gap-1.5">
+                  <Kbd>{openKanbanHotkey}</Kbd>
+                </span>
+              ) : undefined
+            }
+          />
+        )}
       </div>
 
       {/* Navigation Links - Inbox & Automations */}
@@ -3648,109 +3874,123 @@ export function AgentsSidebar({
           )}
 
           {/* Chats Section */}
-          {filteredChats.length > 0 ? (
-            <div className={cn("mb-4", isMultiSelectMode ? "px-0" : "-mx-1")}>
-              {/* Pinned section */}
-              <ChatListSection
-                title="Pinned workspaces"
-                chats={pinnedAgents}
-                selectedChatId={selectedChatId}
-                selectedChatIsRemote={selectedChatIsRemote}
-                focusedChatIndex={focusedChatIndex}
-                loadingChatIds={loadingChatIds}
-                unseenChanges={unseenChanges}
-                workspacePendingPlans={workspacePendingPlans}
-                workspacePendingQuestions={workspacePendingQuestions}
-                isMultiSelectMode={isMultiSelectMode}
-                selectedChatIds={selectedChatIds}
-                isMobileFullscreen={isMobileFullscreen}
-                isDesktop={isDesktop}
-                pinnedChatIds={pinnedChatIds}
-                projectsMap={projectsMap}
-                workspaceFileStats={workspaceFileStats}
-                filteredChats={filteredChats}
-                canShowPinOption={canShowPinOption}
-                areAllSelectedPinned={areAllSelectedPinned}
-                showIcon={showWorkspaceIcon}
-                onChatClick={handleChatClick}
-                onCheckboxClick={handleCheckboxClick}
-                onMouseEnter={handleAgentMouseEnter}
-                onMouseLeave={handleAgentMouseLeave}
-                onArchive={handleArchiveSingle}
-                onTogglePin={handleTogglePin}
-                onRenameClick={handleRenameClick}
-                onCopyBranch={handleCopyBranch}
-                onArchiveAllBelow={handleArchiveAllBelow}
-                onArchiveOthers={handleArchiveOthers}
-                onOpenLocally={handleOpenLocally}
-                onBulkPin={handleBulkPin}
-                onBulkUnpin={handleBulkUnpin}
-                onBulkArchive={handleBulkArchive}
-                archivePending={
-                  archiveChatMutation.isPending ||
-                  archiveRemoteChatMutation.isPending
-                }
-                archiveBatchPending={
-                  archiveChatsBatchMutation.isPending ||
-                  archiveRemoteChatsBatchMutation.isPending
-                }
-                nameRefCallback={nameRefCallback}
-                formatTime={formatTime}
-                justCreatedIds={justCreatedIds}
-              />
+          {filteredChats.length > 0
+            ? (() => {
+                const chatListSharedProps = {
+                  selectedChatId,
+                  selectedChatIsRemote,
+                  focusedChatIndex,
+                  loadingChatIds,
+                  unseenChanges,
+                  workspacePendingPlans,
+                  workspacePendingQuestions,
+                  isMultiSelectMode,
+                  selectedChatIds,
+                  isMobileFullscreen,
+                  isDesktop,
+                  pinnedChatIds,
+                  projectsMap,
+                  workspaceFileStats,
+                  filteredChats,
+                  canShowPinOption,
+                  areAllSelectedPinned,
+                  showIcon: showWorkspaceIcon,
+                  onChatClick: handleChatClick,
+                  onCheckboxClick: handleCheckboxClick,
+                  onMouseEnter: handleAgentMouseEnter,
+                  onMouseLeave: handleAgentMouseLeave,
+                  onArchive: handleArchiveSingle,
+                  onTogglePin: handleTogglePin,
+                  onRenameClick: handleRenameClick,
+                  onCopyBranch: handleCopyBranch,
+                  onArchiveAllBelow: handleArchiveAllBelow,
+                  onArchiveOthers: handleArchiveOthers,
+                  onOpenLocally: handleOpenLocally,
+                  onBulkPin: handleBulkPin,
+                  onBulkUnpin: handleBulkUnpin,
+                  onBulkArchive: handleBulkArchive,
+                  archivePending:
+                    archiveChatMutation.isPending ||
+                    archiveRemoteChatMutation.isPending,
+                  archiveBatchPending:
+                    archiveChatsBatchMutation.isPending ||
+                    archiveRemoteChatsBatchMutation.isPending,
+                  nameRefCallback,
+                  formatTime,
+                  justCreatedIds,
+                };
 
-              {/* Unpinned section */}
-              <ChatListSection
-                title={
-                  pinnedAgents.length > 0 ? "Recent workspaces" : "Workspaces"
-                }
-                chats={unpinnedAgents}
-                selectedChatId={selectedChatId}
-                selectedChatIsRemote={selectedChatIsRemote}
-                focusedChatIndex={focusedChatIndex}
-                loadingChatIds={loadingChatIds}
-                unseenChanges={unseenChanges}
-                workspacePendingPlans={workspacePendingPlans}
-                workspacePendingQuestions={workspacePendingQuestions}
-                isMultiSelectMode={isMultiSelectMode}
-                selectedChatIds={selectedChatIds}
-                isMobileFullscreen={isMobileFullscreen}
-                isDesktop={isDesktop}
-                pinnedChatIds={pinnedChatIds}
-                projectsMap={projectsMap}
-                workspaceFileStats={workspaceFileStats}
-                filteredChats={filteredChats}
-                canShowPinOption={canShowPinOption}
-                areAllSelectedPinned={areAllSelectedPinned}
-                showIcon={showWorkspaceIcon}
-                onChatClick={handleChatClick}
-                onCheckboxClick={handleCheckboxClick}
-                onMouseEnter={handleAgentMouseEnter}
-                onMouseLeave={handleAgentMouseLeave}
-                onArchive={handleArchiveSingle}
-                onTogglePin={handleTogglePin}
-                onRenameClick={handleRenameClick}
-                onCopyBranch={handleCopyBranch}
-                onArchiveAllBelow={handleArchiveAllBelow}
-                onArchiveOthers={handleArchiveOthers}
-                onOpenLocally={handleOpenLocally}
-                onBulkPin={handleBulkPin}
-                onBulkUnpin={handleBulkUnpin}
-                onBulkArchive={handleBulkArchive}
-                archivePending={
-                  archiveChatMutation.isPending ||
-                  archiveRemoteChatMutation.isPending
-                }
-                archiveBatchPending={
-                  archiveChatsBatchMutation.isPending ||
-                  archiveRemoteChatsBatchMutation.isPending
-                }
-                nameRefCallback={nameRefCallback}
-                formatTime={formatTime}
-                justCreatedIds={justCreatedIds}
-              />
-            </div>
-          ) : null}
+                return (
+                  <div
+                    className={cn(
+                      "mb-4",
+                      isMultiSelectMode ? "px-0" : "-mx-1",
+                    )}
+                  >
+                    {/* Pinned section */}
+                    <ChatListSection
+                      title="Pinned"
+                      chats={pinnedAgents}
+                      {...chatListSharedProps}
+                    />
+
+                    {/* Activity section - grouped by project */}
+                    {projectGroups.length > 0 && (
+                      <div
+                        className={cn(
+                          "mb-2 flex h-6 items-center",
+                          isMultiSelectMode ? "pl-3 pr-2" : "pl-2 pr-1",
+                        )}
+                      >
+                        <h3 className="text-xs font-medium text-muted-foreground whitespace-nowrap">
+                          Activity
+                        </h3>
+                        <Tooltip delayDuration={500}>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              onClick={handleNewAgent}
+                              className="ml-auto flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-foreground/5 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70"
+                              aria-label="New thread"
+                            >
+                              <PlusIcon className="h-3.5 w-3.5" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="right">
+                            <span className="flex flex-col items-start gap-1">
+                              <span>Start a new workspace</span>
+                              {newWorkspaceHotkey && (
+                                <span className="flex items-center gap-1.5">
+                                  <Kbd>{newWorkspaceHotkey}</Kbd>
+                                  {newWorkspaceAltHotkey && (
+                                    <>
+                                      <span className="text-[10px] opacity-50">
+                                        or
+                                      </span>
+                                      <Kbd>{newWorkspaceAltHotkey}</Kbd>
+                                    </>
+                                  )}
+                                </span>
+                              )}
+                            </span>
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
+                    )}
+                    {projectGroups.map((group) => (
+                      <ProjectChatGroup
+                        key={group.groupId}
+                        project={group.project}
+                        chats={group.chats}
+                        isCollapsed={collapsedProjectIds.has(group.groupId)}
+                        onToggleCollapsed={toggleProjectCollapsed}
+                        {...chatListSharedProps}
+                      />
+                    ))}
+                  </div>
+                );
+              })()
+            : null}
         </div>
 
         {/* Top gradient fade (appears when scrolled down) */}
@@ -3823,57 +4063,46 @@ export function AgentsSidebar({
             className="p-2 pt-2 flex flex-col gap-2"
           >
             <div className="flex items-center">
-              <div className="flex items-center gap-1">
-                {/* Settings Button */}
-                <Tooltip delayDuration={500}>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSettingsActiveTab("preferences");
-                        setSettingsDialogOpen(true);
-                      }}
-                      className="flex items-center justify-center h-7 w-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.97] outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70"
-                    >
-                      <SettingsIcon className="h-4 w-4" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    Settings
-                    {settingsHotkey && (
-                      <>
-                        {" "}
-                        <Kbd>{settingsHotkey}</Kbd>
-                      </>
-                    )}
-                  </TooltipContent>
-                </Tooltip>
+              {/* Settings Button */}
+              <Tooltip delayDuration={500}>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSettingsActiveTab("preferences");
+                      setSettingsDialogOpen(true);
+                    }}
+                    className="flex items-center justify-center h-7 w-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.97] outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70"
+                  >
+                    <SettingsIcon className="h-4 w-4" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Settings
+                  {settingsHotkey && (
+                    <>
+                      {" "}
+                      <Kbd>{settingsHotkey}</Kbd>
+                    </>
+                  )}
+                </TooltipContent>
+              </Tooltip>
 
-                {/* Help Button - isolated component to prevent sidebar re-renders */}
-                <HelpSection isMobile={isMobileFullscreen} />
-
-                {/* Kanban View Button - isolated component */}
-                <KanbanButton />
-
-                {/* Archive Button - isolated component to prevent sidebar re-renders */}
-                <ArchiveSection archivedChatsCount={archivedChatsCount} />
-              </div>
+              {/* Invisible anchor - keeps the archive popover positioned near the
+                  footer even though it's now opened from the logo dropdown menu */}
+              <ArchivePopover
+                trigger={
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    aria-hidden="true"
+                    className="h-px w-px opacity-0 pointer-events-none"
+                  />
+                }
+              />
 
               <div className="flex-1" />
             </div>
-
-            {/* Feedback Button */}
-            <ButtonCustom
-              onClick={() => window.open(FEEDBACK_URL, "_blank")}
-              variant="outline"
-              size="sm"
-              className={cn(
-                "px-2 w-full hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] text-foreground rounded-lg gap-1.5",
-                isMobileFullscreen ? "h-10" : "h-7",
-              )}
-            >
-              <span className="text-sm font-medium">Feedback</span>
-            </ButtonCustom>
           </motion.div>
         )}
       </AnimatePresence>
