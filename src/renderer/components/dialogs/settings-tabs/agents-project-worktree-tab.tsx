@@ -6,7 +6,7 @@ import { Button, buttonVariants } from "../../ui/button"
 import { Input } from "../../ui/input"
 import { Plus, Trash2, FolderOpen } from "lucide-react"
 import { AIPenIcon, ExternalLinkIcon, FolderFilledIcon, ImageIcon } from "../../ui/icons"
-import { invalidateProjectIcon, useProjectIcon } from "../../../lib/hooks/use-project-icon"
+import { useProjectIcon } from "../../../lib/hooks/use-project-icon"
 import { ProjectIcon } from "../../ui/project-icon"
 import finderIcon from "../../../assets/app-icons/finder.png"
 import {
@@ -39,6 +39,8 @@ import { settingsProjectsSidebarWidthAtom } from "../../../features/agents/atoms
 
 // --- Detail Panel ---
 function ProjectDetail({ projectId }: { projectId: string }) {
+  const utils = trpc.useUtils()
+
   // Get config for selected project
   const { data: configData, refetch: refetchConfig } =
     trpc.worktreeConfig.get.useQuery(
@@ -104,8 +106,8 @@ function ProjectDetail({ projectId }: { projectId: string }) {
   const uploadIconMutation = trpc.projects.uploadIcon.useMutation({
     onSuccess: (data) => {
       if (!data) return // User cancelled file picker
-      invalidateProjectIcon(projectId)
-      refetchProject()
+      void refetchProject()
+      void utils.projects.list.invalidate()
       toast.success("Icon updated")
     },
     onError: (err) => {
@@ -115,8 +117,8 @@ function ProjectDetail({ projectId }: { projectId: string }) {
 
   const removeIconMutation = trpc.projects.removeIcon.useMutation({
     onSuccess: () => {
-      invalidateProjectIcon(projectId)
-      refetchProject()
+      void refetchProject()
+      void utils.projects.list.invalidate()
       toast.success("Icon removed")
     },
   })
