@@ -922,6 +922,9 @@ export const showMessageJsonAtom = atomWithStorage<boolean>(
 export type DesktopView = "automations" | "automations-detail" | "inbox" | "settings" | null
 export const desktopViewAtom = atom<DesktopView>(null)
 
+// Global command menu (opened from the sidebar search trigger or Cmd/Ctrl+K)
+export const globalCommandMenuOpenAtom = atom(false)
+
 // Which automation is being viewed/edited (ID or "new" for creation)
 export const automationDetailIdAtom = atom<string | null>(null)
 
