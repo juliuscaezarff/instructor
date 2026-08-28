@@ -18,6 +18,7 @@ import {
   anthropicOnboardingCompletedAtom,
   customHotkeysAtom,
   betaKanbanEnabledAtom,
+  betaAutomationsEnabledAtom,
 } from "../../lib/atoms";
 import {
   selectedAgentChatIdAtom,
@@ -26,6 +27,7 @@ import {
   showNewChatFormAtom,
   desktopViewAtom,
   fileSearchDialogOpenAtom,
+  globalCommandMenuOpenAtom,
 } from "../agents/atoms";
 import { trpc } from "../../lib/trpc";
 import { useAgentsHotkeys } from "../agents/lib/agents-hotkeys-manager";
@@ -42,6 +44,7 @@ import { useUpdateChecker } from "../../lib/hooks/use-update-checker";
 import { useAgentSubChatStore } from "../agents/stores/sub-chat-store";
 import { QueueProcessor } from "../agents/components/queue-processor";
 import { SettingsSidebar } from "../settings/settings-sidebar";
+import { GlobalCommandMenu } from "../agents/components/global-command-menu";
 
 // ============================================================================
 // Constants
@@ -109,6 +112,7 @@ export function AgentsLayout() {
   const setSelectedDraftId = useSetAtom(selectedDraftIdAtom);
   const setShowNewChatForm = useSetAtom(showNewChatFormAtom);
   const betaKanbanEnabled = useAtomValue(betaKanbanEnabledAtom);
+  const betaAutomationsEnabled = useAtomValue(betaAutomationsEnabledAtom);
   const setDesktopView = useSetAtom(desktopViewAtom);
   const setAnthropicOnboardingCompleted = useSetAtom(
     anthropicOnboardingCompletedAtom,
@@ -306,8 +310,10 @@ export function AgentsLayout() {
     setFileSearchDialogOpen,
     toggleChatSearch,
     selectedChatId,
+    selectedProjectId: selectedProject?.id ?? null,
     customHotkeysConfig,
     betaKanbanEnabled,
+    betaAutomationsEnabled,
   });
 
   const handleCloseSidebar = useCallback(() => {
@@ -318,6 +324,7 @@ export function AgentsLayout() {
     <TooltipProvider delayDuration={300}>
       {/* Global queue processor - handles message queues for all sub-chats */}
       <QueueProcessor />
+      <GlobalCommandMenu />
       <ClaudeLoginModal
         hideCustomModelSettingsLink={
           claudeLoginModalConfig.hideCustomModelSettingsLink
