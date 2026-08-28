@@ -29,6 +29,9 @@ export interface AgentActionContext {
 
   // Data
   selectedChatId?: string | null
+  selectedProjectId?: string | null
+  betaKanbanEnabled?: boolean
+  betaAutomationsEnabled?: boolean
 }
 
 export interface AgentActionResult {
@@ -122,6 +125,7 @@ const toggleChatSearchAction: AgentActionDefinition = {
   description: "Search through chat history",
   category: "view",
   hotkey: ["cmd+f", "ctrl+f"],
+  isAvailable: (context) => Boolean(context.selectedChatId),
   handler: async (context) => {
     context.toggleChatSearch?.()
     return { success: true }
@@ -134,6 +138,7 @@ const openKanbanAction: AgentActionDefinition = {
   description: "Open the Kanban board view",
   category: "view",
   hotkey: "cmd+shift+k",
+  isAvailable: (context) => context.betaKanbanEnabled === true,
   handler: async (context) => {
     // Clear selected chat, draft, and new form state to show Kanban view
     context.setSelectedChatId?.(null)
@@ -150,6 +155,7 @@ const openAutomationsAction: AgentActionDefinition = {
   label: "Automations",
   description: "Open automations page",
   category: "navigation",
+  isAvailable: (context) => context.betaAutomationsEnabled === true,
   handler: async (context) => {
     context.setSelectedChatId?.(null)
     context.setSelectedDraftId?.(null)
@@ -165,6 +171,7 @@ const openInEditorAction: AgentActionDefinition = {
   description: "Open worktree in preferred editor",
   category: "general",
   hotkey: "cmd+o",
+  isAvailable: (context) => Boolean(context.selectedChatId),
   handler: async () => {
     // Handled by the info-section component via event dispatch
     window.dispatchEvent(new CustomEvent("open-in-editor"))
@@ -177,6 +184,7 @@ const openInboxAction: AgentActionDefinition = {
   label: "Inbox",
   description: "Open inbox",
   category: "navigation",
+  isAvailable: (context) => context.betaAutomationsEnabled === true,
   handler: async (context) => {
     context.setSelectedChatId?.(null)
     context.setSelectedDraftId?.(null)
@@ -192,6 +200,7 @@ const openFileInEditorAction: AgentActionDefinition = {
   description: "Open currently previewed file in preferred editor",
   category: "general",
   hotkey: "cmd+shift+o",
+  isAvailable: (context) => Boolean(context.selectedChatId),
   handler: async () => {
     window.dispatchEvent(new CustomEvent("open-file-in-editor"))
     return { success: true }
@@ -204,6 +213,7 @@ const fileSearchAction: AgentActionDefinition = {
   description: "Search and open a file in the workspace",
   category: "navigation",
   hotkey: "cmd+p",
+  isAvailable: (context) => Boolean(context.selectedProjectId),
   handler: async (context) => {
     context.setFileSearchDialogOpen?.(true)
     return { success: true }
