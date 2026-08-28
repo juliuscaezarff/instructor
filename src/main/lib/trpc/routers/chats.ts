@@ -66,6 +66,22 @@ function getFallbackName(userMessage: string): string {
   return trimmed.substring(0, 25) + "..."
 }
 
+function inferAgentProviderFromModel(
+  model: string | null,
+): "claude-code" | "codex" | null {
+  if (!model) return null
+
+  const normalizedModel = model.toLowerCase()
+  if (
+    normalizedModel.includes("codex") ||
+    normalizedModel.startsWith("gpt-")
+  ) {
+    return "codex"
+  }
+
+  return "claude-code"
+}
+
 /**
  * Generate text using local Ollama model
  * Used for chat title generation in offline mode
@@ -221,12 +237,44 @@ export const chatsRouter = router({
       if (input.projectId) {
         conditions.push(eq(chats.projectId, input.projectId))
       }
-      return db
+      const listedChats = db
         .select()
         .from(chats)
         .where(and(...conditions))
         .orderBy(desc(chats.updatedAt))
         .all()
+
+      if (listedChats.length === 0) return []
+
+      const recentSubChats = db
+        .select({
+          chatId: subChats.chatId,
+          model: sql<string | null>`json_extract(${subChats.messages}, '$[0].metadata.model')`,
+        })
+        .from(subChats)
+        .where(
+          inArray(
+            subChats.chatId,
+            listedChats.map((chat) => chat.id),
+          ),
+        )
+        .orderBy(desc(subChats.updatedAt))
+        .all()
+
+      const agentProviderByChatId = new Map<
+        string,
+        "claude-code" | "codex"
+      >()
+      for (const subChat of recentSubChats) {
+        if (agentProviderByChatId.has(subChat.chatId)) continue
+        const provider = inferAgentProviderFromModel(subChat.model)
+        if (provider) agentProviderByChatId.set(subChat.chatId, provider)
+      }
+
+      return listedChats.map((chat) => ({
+        ...chat,
+        agentProvider: agentProviderByChatId.get(chat.id) ?? "claude-code",
+      }))
     }),
 
   /**
