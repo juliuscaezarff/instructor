@@ -114,9 +114,11 @@ export interface AgentsHotkeysManagerConfig {
   setFileSearchDialogOpen?: (open: boolean) => void
   toggleChatSearch?: () => void
   selectedChatId?: string | null
+  selectedProjectId?: string | null
   customHotkeysConfig?: CustomHotkeysConfig
   // Feature flags
   betaKanbanEnabled?: boolean
+  betaAutomationsEnabled?: boolean
 }
 
 export interface UseAgentsHotkeysOptions {
@@ -148,6 +150,9 @@ export function useAgentsHotkeys(
       setFileSearchDialogOpen: config.setFileSearchDialogOpen,
       toggleChatSearch: config.toggleChatSearch,
       selectedChatId: config.selectedChatId,
+      selectedProjectId: config.selectedProjectId,
+      betaKanbanEnabled: config.betaKanbanEnabled,
+      betaAutomationsEnabled: config.betaAutomationsEnabled,
     }),
     [
       config.setSelectedChatId,
@@ -159,6 +164,9 @@ export function useAgentsHotkeys(
       config.setFileSearchDialogOpen,
       config.toggleChatSearch,
       config.selectedChatId,
+      config.selectedProjectId,
+      config.betaKanbanEnabled,
+      config.betaAutomationsEnabled,
     ],
   )
 
