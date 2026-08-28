@@ -503,7 +503,7 @@ export const projectsRouter = router({
         title: "Select Project Icon",
         buttonLabel: "Set Icon",
         filters: [
-          { name: "Images", extensions: ["png", "jpg", "jpeg", "svg", "webp", "ico"] },
+          { name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "svg", "webp", "ico"] },
         ],
       })
 
