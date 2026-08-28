@@ -113,8 +113,13 @@ import {
   QuestionIcon,
   KeyboardIcon,
   TicketIcon,
-  CloudIcon,
+  ClaudeCodeLogoIcon,
+  CodexIcon,
 } from "../../components/ui/icons";
+import {
+  PRIcon,
+  type PRState,
+} from "../changes/components/pr-icon/pr-icon";
 import { Logo } from "../../components/ui/logo";
 import { Input } from "../../components/ui/input";
 import { Button } from "../../components/ui/button";
@@ -373,6 +378,72 @@ const ChatIcon = React.memo(function ChatIcon({
   );
 });
 
+type ChatAgentProvider = "claude-code" | "codex";
+
+const CHAT_AGENT_PRESENTATION: Record<
+  ChatAgentProvider,
+  {
+    label: string;
+    Icon: React.ComponentType<{ className?: string }>;
+  }
+> = {
+  "claude-code": {
+    label: "Claude Code",
+    Icon: ClaudeCodeLogoIcon,
+  },
+  codex: {
+    label: "OpenAI Codex",
+    Icon: CodexIcon,
+  },
+};
+
+const ChatAgentIcon = React.memo(function ChatAgentIcon({
+  provider,
+}: {
+  provider: ChatAgentProvider;
+}) {
+  const { label, Icon } = CHAT_AGENT_PRESENTATION[provider];
+
+  return (
+    <span
+      className="inline-flex h-3 w-3 flex-shrink-0 items-center justify-center text-muted-foreground"
+      role="img"
+      aria-label={label}
+      title={label}
+    >
+      <Icon className="h-3 w-3" />
+    </span>
+  );
+});
+
+const SidebarPrStatusIcon = React.memo(function SidebarPrStatusIcon({
+  chatId,
+}: {
+  chatId: string;
+}) {
+  const { data: status } = trpc.chats.getPrStatus.useQuery(
+    { chatId },
+    {
+      staleTime: 60_000,
+      refetchInterval: 60_000,
+      refetchOnWindowFocus: false,
+    },
+  );
+  const state = (status?.pr?.state ?? "open") as PRState;
+  const label = `Pull request ${state}`;
+
+  return (
+    <span
+      className="inline-flex h-3 w-3 flex-shrink-0 items-center justify-center"
+      role="img"
+      aria-label={label}
+      title={label}
+    >
+      <PRIcon state={state} className="h-3 w-3" />
+    </span>
+  );
+});
+
 // Memoized Draft Item component to prevent re-renders on hover
 const DraftItem = React.memo(function DraftItem({
   draftId,
@@ -490,7 +561,9 @@ const AgentChatItem = React.memo(function AgentChatItem({
   isMobileFullscreen,
   isDesktop,
   isPinned,
-  displayText,
+  agentProvider,
+  chatPrNumber,
+  projectName,
   gitOwner,
   gitProvider,
   stats,
@@ -538,7 +611,9 @@ const AgentChatItem = React.memo(function AgentChatItem({
   isMobileFullscreen: boolean;
   isDesktop: boolean;
   isPinned: boolean;
-  displayText: string;
+  agentProvider: ChatAgentProvider;
+  chatPrNumber: number | null;
+  projectName: string | null;
   gitOwner: string | null | undefined;
   gitProvider: string | null | undefined;
   stats:
@@ -618,7 +693,8 @@ const AgentChatItem = React.memo(function AgentChatItem({
           }}
           onMouseLeave={onMouseLeave}
           className={cn(
-            "w-full text-left py-1.5 cursor-pointer group relative",
+            "w-full text-left cursor-pointer group relative",
+            isPinned ? "py-1" : "py-1.5",
             "transition-colors duration-75",
             "outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70",
             // In multi-select: px-3 compensates for removed container px-2, keeping text aligned
@@ -638,6 +714,72 @@ const AgentChatItem = React.memo(function AgentChatItem({
                 : "bg-primary/10 hover:bg-primary/15"),
           )}
         >
+          {isPinned ? (
+            <div className="flex min-w-0 items-center gap-1.5">
+              {isMultiSelectMode && (
+                <ChatIcon
+                  isSelected={isSelected}
+                  isLoading={isLoading}
+                  hasUnseenChanges={hasUnseenChanges}
+                  hasPendingPlan={hasPendingPlan}
+                  hasPendingQuestion={hasPendingQuestion}
+                  isMultiSelectMode={true}
+                  isChecked={isChecked}
+                  onCheckboxClick={(e) => onCheckboxClick(e, chatId)}
+                  gitOwner={gitOwner}
+                  gitProvider={gitProvider}
+                  showIcon={showIcon}
+                />
+              )}
+              {chatPrNumber !== null && (
+                <SidebarPrStatusIcon chatId={chatId} />
+              )}
+              <ChatAgentIcon provider={agentProvider} />
+              <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                <span
+                  ref={(el) => nameRefCallback(chatId, el)}
+                  className="min-w-0 truncate text-xs leading-tight"
+                  title={chatName || "New workspace"}
+                >
+                  <TypewriterText
+                    text={chatName || ""}
+                    placeholder="New workspace"
+                    id={chatId}
+                    isJustCreated={isJustCreated}
+                    showPlaceholder={true}
+                  />
+                </span>
+                {projectName && (
+                  <span
+                    className="max-w-[35%] flex-shrink-0 truncate text-[11px] text-muted-foreground/60"
+                    title={projectName}
+                  >
+                    {projectName}
+                  </span>
+                )}
+              </div>
+              <div className="relative flex h-4 flex-shrink-0 items-center text-[11px] tabular-nums text-muted-foreground/60">
+                <span className="transition-opacity duration-150 group-hover:opacity-0">
+                  {formatTime(
+                    chatUpdatedAt?.toISOString() ?? new Date().toISOString(),
+                  )}
+                </span>
+                {!isMultiSelectMode && !isMobileFullscreen && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onArchive(chatId);
+                    }}
+                    tabIndex={-1}
+                    className="absolute inset-0 flex items-center justify-end text-muted-foreground opacity-0 transition-[opacity,color] duration-150 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto hover:text-foreground"
+                    aria-label="Archive workspace"
+                  >
+                    <ArchiveIcon className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
           <div className="flex items-start gap-2.5">
             {/* Icon container - only render if showIcon or in multi-select mode */}
             {(showIcon || isMultiSelectMode) && (
@@ -747,11 +889,14 @@ const AgentChatItem = React.memo(function AgentChatItem({
                 )}
               </div>
               <div className="flex items-center gap-1 text-[11px] text-muted-foreground/60 min-w-0">
-                {/* Cloud icon for remote chats */}
-                {isRemote && (
-                  <CloudIcon className="h-2.5 w-2.5 flex-shrink-0" />
+                {chatPrNumber !== null && (
+                  <SidebarPrStatusIcon chatId={chatId} />
                 )}
-                <span className="truncate flex-1 min-w-0">{displayText}</span>
+                <ChatAgentIcon provider={agentProvider} />
+                {chatBranch && (
+                  <span className="truncate flex-1 min-w-0">{chatBranch}</span>
+                )}
+                {!chatBranch && <span className="flex-1 min-w-0" />}
                 <div className="flex items-center gap-1.5 flex-shrink-0">
                   {stats && (stats.additions > 0 || stats.deletions > 0) && (
                     <>
@@ -772,6 +917,7 @@ const AgentChatItem = React.memo(function AgentChatItem({
               </div>
             </div>
           </div>
+          )}
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-48">
@@ -1014,6 +1160,8 @@ interface ChatListSectionProps {
     branch: string | null;
     updatedAt: Date | null;
     projectId: string | null;
+    prNumber: number | null;
+    agentProvider: ChatAgentProvider;
     isRemote: boolean;
     meta?: { repository?: string; branch?: string | null } | null;
     remoteStats?: {
@@ -1141,7 +1289,7 @@ const ChatListSection = React.memo(function ChatListSection({
       {title && (
         <div
           className={cn(
-            "flex items-center h-4 mb-1",
+            "flex items-center h-4 mb-2",
             isMultiSelectMode ? "pl-3" : "pl-2",
           )}
         >
@@ -1170,14 +1318,6 @@ const ChatListSection = React.memo(function ChatListSection({
           const project = chat.projectId
             ? projectsMap.get(chat.projectId)
             : null;
-          const repoName = chat.isRemote
-            ? chat.meta?.repository
-            : project?.gitRepo || project?.name;
-          const displayText = chat.branch
-            ? repoName
-              ? `${repoName} • ${chat.branch}`
-              : chat.branch
-            : repoName || (chat.isRemote ? "Remote project" : "Local project");
 
           const isChecked = selectedChatIds.has(chat.id);
           // TODO: remote stats disabled — backend no longer computes them (was causing 50s+ loads)
@@ -1194,6 +1334,9 @@ const ChatListSection = React.memo(function ChatListSection({
             ? chat.meta?.repository?.split("/")[0]
             : project?.gitOwner;
           const gitProvider = chat.isRemote ? "github" : project?.gitProvider;
+          const projectName = chat.isRemote
+            ? (chat.meta?.repository?.split("/").pop() ?? null)
+            : (project?.name ?? null);
 
           return (
             <AgentChatItem
@@ -1215,7 +1358,9 @@ const ChatListSection = React.memo(function ChatListSection({
               isMobileFullscreen={isMobileFullscreen}
               isDesktop={isDesktop}
               isPinned={isPinned}
-              displayText={displayText}
+              agentProvider={chat.agentProvider}
+              chatPrNumber={chat.prNumber}
+              projectName={projectName}
               gitOwner={gitOwner}
               gitProvider={gitProvider}
               stats={stats ?? undefined}
@@ -1259,6 +1404,7 @@ interface ProjectChatGroupProps extends Omit<ChatListSectionProps, "title"> {
     id: string;
     name?: string | null;
     iconPath?: string | null;
+    updatedAt?: string | Date | null;
     gitOwner?: string | null;
     gitProvider?: string | null;
   } | null;
@@ -1287,7 +1433,7 @@ const ProjectChatGroup = React.memo(function ProjectChatGroup({
       <CollapsibleTrigger asChild>
         <button
           type="button"
-          className="flex items-center gap-1.5 h-6 w-full pl-2 pr-1 mb-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors duration-150"
+          className="flex h-7 w-full items-center gap-2 rounded-md pl-2 pr-1 mb-1 text-muted-foreground transition-colors duration-150 hover:bg-muted/50 hover:text-foreground"
         >
           <ChevronDown
             className={cn(
@@ -1295,11 +1441,11 @@ const ProjectChatGroup = React.memo(function ProjectChatGroup({
               isCollapsed && "-rotate-90",
             )}
           />
-          <ProjectIcon project={project} className="h-3.5 w-3.5" />
+          <ProjectIcon project={project} className="h-5 w-5" />
           <span className="text-xs font-medium truncate flex-1 text-left">
             {groupName}
           </span>
-          <span className="text-[10px] text-muted-foreground/60 flex-shrink-0">
+          <span className="min-w-4 flex-shrink-0 text-center text-xs font-medium tabular-nums text-muted-foreground/80">
             {chats.length}
           </span>
         </button>
@@ -2098,6 +2244,7 @@ export function AgentsSidebar({
       baseBranch: string | null;
       prUrl: string | null;
       prNumber: number | null;
+      agentProvider: ChatAgentProvider;
       sandboxId?: string | null;
       meta?: { repository?: string; branch?: string | null } | null;
       isRemote: boolean;
@@ -2123,6 +2270,7 @@ export function AgentsSidebar({
           baseBranch: chat.baseBranch,
           prUrl: chat.prUrl,
           prNumber: chat.prNumber,
+          agentProvider: chat.agentProvider,
           isRemote: false,
         });
       }
@@ -2143,6 +2291,7 @@ export function AgentsSidebar({
           baseBranch: null,
           prUrl: null,
           prNumber: null,
+          agentProvider: "claude-code",
           sandboxId: chat.sandbox_id,
           meta: chat.meta,
           isRemote: true,
@@ -3787,13 +3936,43 @@ export function AgentsSidebar({
                     {projectGroups.length > 0 && (
                       <div
                         className={cn(
-                          "flex items-center h-4 mb-1",
-                          isMultiSelectMode ? "pl-3" : "pl-2",
+                          "mb-2 flex h-6 items-center",
+                          isMultiSelectMode ? "pl-3 pr-2" : "pl-2 pr-1",
                         )}
                       >
                         <h3 className="text-xs font-medium text-muted-foreground whitespace-nowrap">
                           Activity
                         </h3>
+                        <Tooltip delayDuration={500}>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              onClick={handleNewAgent}
+                              className="ml-auto flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-foreground/5 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70"
+                              aria-label="New thread"
+                            >
+                              <PlusIcon className="h-3.5 w-3.5" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="right">
+                            <span className="flex flex-col items-start gap-1">
+                              <span>Start a new workspace</span>
+                              {newWorkspaceHotkey && (
+                                <span className="flex items-center gap-1.5">
+                                  <Kbd>{newWorkspaceHotkey}</Kbd>
+                                  {newWorkspaceAltHotkey && (
+                                    <>
+                                      <span className="text-[10px] opacity-50">
+                                        or
+                                      </span>
+                                      <Kbd>{newWorkspaceAltHotkey}</Kbd>
+                                    </>
+                                  )}
+                                </span>
+                              )}
+                            </span>
+                          </TooltipContent>
+                        </Tooltip>
                       </div>
                     )}
                     {projectGroups.map((group) => (
