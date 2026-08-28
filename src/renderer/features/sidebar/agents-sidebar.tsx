@@ -55,6 +55,7 @@ import {
   SquarePen,
   Home,
   GitPullRequest,
+  Pin,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { remoteTrpc } from "../../lib/remote-trpc";
@@ -768,13 +769,14 @@ const AgentChatItem = React.memo(function AgentChatItem({
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      onArchive(chatId);
+                      onTogglePin(chatId);
                     }}
                     tabIndex={-1}
                     className="absolute inset-0 flex items-center justify-end text-muted-foreground opacity-0 transition-[opacity,color] duration-150 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto hover:text-foreground"
-                    aria-label="Archive workspace"
+                    aria-label="Unpin workspace"
+                    title="Unpin workspace"
                   >
-                    <ArchiveIcon className="h-3.5 w-3.5" />
+                    <Pin className="h-3.5 w-3.5 fill-current" />
                   </button>
                 )}
               </div>
