@@ -366,7 +366,7 @@ export const filesRouter = router({
    * Read a binary file as base64 (for images)
    */
   readBinaryFile: publicProcedure
-    .input(z.object({ filePath: z.string() }))
+    .input(z.object({ filePath: z.string(), version: z.string().optional() }))
     .query(async ({ input }) => {
       const { filePath } = input
       const MAX_SIZE = 20 * 1024 * 1024 // 20 MB
