@@ -122,7 +122,6 @@ import {
   type PRState,
 } from "../changes/components/pr-icon/pr-icon";
 import { Logo } from "../../components/ui/logo";
-import { Input } from "../../components/ui/input";
 import { Button } from "../../components/ui/button";
 import { ProjectIcon } from "../../components/ui/project-icon";
 import {
@@ -145,6 +144,7 @@ import {
   undoStackAtom,
   pendingUserQuestionsAtom,
   desktopViewAtom,
+  globalCommandMenuOpenAtom,
   type UndoItem,
 } from "../agents/atoms";
 import { NetworkStatus } from "../../components/ui/network-status";
@@ -1960,12 +1960,15 @@ const SidebarHeader = memo(function SidebarHeader({
                   // @ts-expect-error - WebKit-specific property
                   WebkitAppRegion: "no-drag",
                 }}
-                aria-label="Search chats"
+                aria-label="Search chats and commands"
               >
                 <SearchIcon className="h-3.5 w-3.5" />
               </button>
             </TooltipTrigger>
-            <TooltipContent>Search</TooltipContent>
+            <TooltipContent>
+              Search
+              <Kbd>⌘K</Kbd>
+            </TooltipContent>
           </Tooltip>
 
           {/* Close sidebar - always visible */}
@@ -2022,7 +2025,8 @@ export function AgentsSidebar({
   const setDesktopView = useSetAtom(desktopViewAtom);
   const [loadingSubChats] = useAtom(loadingSubChatsAtom);
   const pendingQuestions = useAtomValue(pendingUserQuestionsAtom);
-  const [searchQuery, setSearchQuery] = useState("");
+  const setGlobalCommandMenuOpen = useSetAtom(globalCommandMenuOpenAtom);
+  const globalCommandMenuOpen = useAtomValue(globalCommandMenuOpenAtom);
   const [focusedChatIndex, setFocusedChatIndex] = useState<number>(-1); // -1 means no focus
   const hoveredChatIndexRef = useRef<number>(-1); // Track hovered chat for X hotkey - ref to avoid re-renders
 
@@ -2086,13 +2090,6 @@ export function AgentsSidebar({
 
   // Pinned chats (stored in localStorage per project)
   const [pinnedChatIds, setPinnedChatIds] = useState<Set<string>>(new Set());
-  const searchInputRef = useRef<HTMLInputElement>(null);
-
-  // Header search toggle (search input stays hidden until the icon is clicked)
-  const [searchOpen, setSearchOpen] = useState(false);
-  const toggleSearch = useCallback(() => {
-    setSearchOpen((prev) => !prev);
-  }, []);
 
   // Header nav row active state (visual only for Home/Pull requests, Kanban is wired below)
   const [activeNav, setActiveNav] = useState<
@@ -2146,15 +2143,6 @@ export function AgentsSidebar({
     setShowNewChatForm(false);
     setDesktopView(null);
   }, [setSelectedChatId, setSelectedDraftId, setShowNewChatForm, setDesktopView]);
-
-  // Focus the search input when it's toggled open
-  useEffect(() => {
-    if (searchOpen) {
-      searchInputRef.current?.focus();
-    } else {
-      setSearchQuery("");
-    }
-  }, [searchOpen]);
 
   // Opens the archive popover from the logo/team dropdown menu
   const setArchivePopoverOpen = useSetAtom(archivePopoverOpenAtom);
@@ -2766,26 +2754,20 @@ export function AgentsSidebar({
   // Get clerk username
   const clerkUsername = clerkUser?.username;
 
-  // Filter and separate pinned/unpinned agents
+  // Separate pinned/unpinned agents (chat search now lives in the global command menu)
   const { pinnedAgents, unpinnedAgents, filteredChats } = useMemo(() => {
     if (!agentChats)
       return { pinnedAgents: [], unpinnedAgents: [], filteredChats: [] };
 
-    const filtered = searchQuery.trim()
-      ? agentChats.filter((chat) =>
-          (chat.name ?? "").toLowerCase().includes(searchQuery.toLowerCase()),
-        )
-      : agentChats;
-
-    const pinned = filtered.filter((chat) => pinnedChatIds.has(chat.id));
-    const unpinned = filtered.filter((chat) => !pinnedChatIds.has(chat.id));
+    const pinned = agentChats.filter((chat) => pinnedChatIds.has(chat.id));
+    const unpinned = agentChats.filter((chat) => !pinnedChatIds.has(chat.id));
 
     return {
       pinnedAgents: pinned,
       unpinnedAgents: unpinned,
       filteredChats: [...pinned, ...unpinned],
     };
-  }, [searchQuery, agentChats, pinnedChatIds]);
+  }, [agentChats, pinnedChatIds]);
 
   // Group the Activity feed (unpinned chats) by project - order follows first
   // appearance in unpinnedAgents, which is already sorted newest-first
@@ -3043,10 +3025,10 @@ export function AgentsSidebar({
     ],
   );
 
-  // Reset focused index when search query changes
+  // Reset focused index when the chat list changes
   useEffect(() => {
     setFocusedChatIndex(-1);
-  }, [searchQuery, filteredChats.length]);
+  }, [filteredChats.length]);
 
   // Scroll focused item into view
   useEffect(() => {
@@ -3516,32 +3498,6 @@ export function AgentsSidebar({
     return () => resizeObserver.disconnect();
   }, [filteredChats]);
 
-  // Direct listener for Cmd+K to focus search input
-  useEffect(() => {
-    const handleSearchHotkey = (e: KeyboardEvent) => {
-      // Check for Cmd+K or Ctrl+K (only for search functionality)
-      if (
-        (e.metaKey || e.ctrlKey) &&
-        e.code === "KeyK" &&
-        !e.shiftKey &&
-        !e.altKey
-      ) {
-        e.preventDefault();
-        e.stopPropagation();
-
-        // Focus search input
-        searchInputRef.current?.focus();
-        searchInputRef.current?.select();
-      }
-    };
-
-    window.addEventListener("keydown", handleSearchHotkey, true);
-
-    return () => {
-      window.removeEventListener("keydown", handleSearchHotkey, true);
-    };
-  }, []);
-
   // Multi-select hotkeys
   // X to toggle selection of hovered or focused chat
   useHotkeys(
@@ -3699,73 +3655,11 @@ export function AgentsSidebar({
         setSettingsDialogOpen={setSettingsDialogOpen}
         setSettingsActiveTab={setSettingsActiveTab}
         setShowAuthDialog={setShowAuthDialog}
-        searchOpen={searchOpen}
-        onToggleSearch={toggleSearch}
+        searchOpen={globalCommandMenuOpen}
+        onToggleSearch={() => setGlobalCommandMenuOpen(true)}
         archivedChatsCount={archivedChatsCount}
         onOpenArchive={handleOpenArchive}
       />
-
-      {/* Search input - only rendered when toggled open from the header icon */}
-      {searchOpen && (
-        <div className="px-2 pb-3 flex-shrink-0">
-          <div className="relative">
-            <Input
-              ref={searchInputRef}
-              placeholder="Search workspaces..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") {
-                  e.preventDefault();
-                  searchInputRef.current?.blur();
-                  setFocusedChatIndex(-1); // Reset focus
-                  return;
-                }
-
-                if (e.key === "ArrowDown") {
-                  e.preventDefault();
-                  setFocusedChatIndex((prev) => {
-                    // If no focus yet, start from first item
-                    if (prev === -1) return 0;
-                    // Otherwise move down
-                    return prev < filteredChats.length - 1 ? prev + 1 : prev;
-                  });
-                  return;
-                }
-
-                if (e.key === "ArrowUp") {
-                  e.preventDefault();
-                  setFocusedChatIndex((prev) => {
-                    // If no focus yet, start from last item
-                    if (prev === -1) return filteredChats.length - 1;
-                    // Otherwise move up
-                    return prev > 0 ? prev - 1 : prev;
-                  });
-                  return;
-                }
-
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  // Only open if something is focused (not -1)
-                  if (focusedChatIndex >= 0) {
-                    const focusedChat = filteredChats[focusedChatIndex];
-                    if (focusedChat) {
-                      handleChatClick(focusedChat.id);
-                      searchInputRef.current?.blur();
-                      setFocusedChatIndex(-1); // Reset focus after selection
-                    }
-                  }
-                  return;
-                }
-              }}
-              className={cn(
-                "w-full rounded-lg text-sm bg-muted border border-input placeholder:text-muted-foreground/40",
-                isMobileFullscreen ? "h-10" : "h-7",
-              )}
-            />
-          </div>
-        </div>
-      )}
 
       {/* Nav rows - New thread / Home / Pull requests / Kanban */}
       <div className="px-2 pt-2 pb-3 flex-shrink-0 space-y-0.5">
@@ -3837,7 +3731,7 @@ export function AgentsSidebar({
           )}
         >
           {/* Drafts Section - always show regardless of chat source mode */}
-          {drafts.length > 0 && !searchQuery && (
+          {drafts.length > 0 && (
             <div className={cn("mb-4", isMultiSelectMode ? "px-0" : "-mx-1")}>
               <div
                 className={cn(
