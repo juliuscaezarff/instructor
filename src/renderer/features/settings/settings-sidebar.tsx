@@ -33,7 +33,7 @@ const isDevelopment = import.meta.env.DEV
 const DEVTOOLS_UNLOCK_CLICKS = 5
 
 // General settings tabs
-const MAIN_TABS = [
+export const SETTINGS_MAIN_TABS = [
   {
     id: "preferences" as SettingsTab,
     label: "Preferences",
@@ -62,7 +62,7 @@ const MAIN_TABS = [
 ]
 
 // Advanced tabs (base - without Debug)
-const ADVANCED_TABS_BASE = [
+export const SETTINGS_ADVANCED_TABS = [
   {
     id: "projects" as SettingsTab,
     label: "Projects",
@@ -96,7 +96,7 @@ const ADVANCED_TABS_BASE = [
 ]
 
 // Debug tab definition
-const DEBUG_TAB = {
+export const SETTINGS_DEBUG_TAB = {
   id: "debug" as SettingsTab,
   label: "Debug",
   icon: BugFilledIcon,
@@ -159,8 +159,8 @@ export function SettingsSidebar() {
   const showDebugTab = isDevelopment || devToolsUnlocked
 
   const mainTabs = useMemo(() => {
-    if (showDebugTab) return [...MAIN_TABS, DEBUG_TAB]
-    return MAIN_TABS
+    if (showDebugTab) return [...SETTINGS_MAIN_TABS, SETTINGS_DEBUG_TAB]
+    return SETTINGS_MAIN_TABS
   }, [showDebugTab])
 
   const handleTabClick = (tabId: SettingsTab) => {
@@ -218,7 +218,7 @@ export function SettingsSidebar() {
 
         {/* Advanced Tabs */}
         <div className="space-y-1">
-          {ADVANCED_TABS_BASE.map((tab) => (
+          {SETTINGS_ADVANCED_TABS.map((tab) => (
             <TabButton
               key={tab.id}
               tab={tab}
