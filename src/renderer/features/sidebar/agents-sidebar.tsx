@@ -1560,15 +1560,15 @@ const SidebarHeader = memo(function SidebarHeader({
               <DropdownMenuTrigger asChild>
                 <ButtonCustom
                   variant="ghost"
-                  className="h-6 px-2 justify-start hover:bg-foreground/10 rounded-md group/team-button max-w-full"
+                  className="h-8 px-2 justify-start hover:bg-foreground/10 rounded-md group/team-button max-w-full"
                   suppressHydrationWarning
                 >
-                  <div className="flex items-center gap-1.5 min-w-0 max-w-full">
+                  <div className="flex items-center gap-2 min-w-0 max-w-full">
                     <div className="flex items-center justify-center flex-shrink-0">
-                      <Logo className="w-5 h-5" />
+                      <Logo className="w-7 h-7" />
                     </div>
                     <div className="min-w-0 flex-1 overflow-hidden">
-                      <div className="text-sm font-medium text-foreground truncate">
+                      <div className="text-base font-semibold leading-none text-foreground truncate">
                         Instructor
                       </div>
                     </div>
@@ -1577,7 +1577,7 @@ const SidebarHeader = memo(function SidebarHeader({
                         <NetworkStatus />
                       </div>
                     )}
-                    <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
                   </div>
                 </ButtonCustom>
               </DropdownMenuTrigger>
