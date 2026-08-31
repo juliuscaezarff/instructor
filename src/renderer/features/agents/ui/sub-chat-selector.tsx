@@ -5,7 +5,6 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai"
 import {
   loadingSubChatsAtom,
   agentsSubChatUnseenChangesAtom,
-  agentsSubChatsSidebarModeAtom,
   pendingUserQuestionsAtom,
 } from "../atoms"
 import {
@@ -19,7 +18,6 @@ import {
   IconSpinner,
   PlanIcon,
   AgentIcon,
-  IconOpenSidebarRight,
   PinFilledIcon,
   DiffIcon,
   ClockIcon,
@@ -138,6 +136,7 @@ const SearchHistoryPopover = memo(forwardRef<SearchHistoryPopoverRef, SearchHist
       items={sortedSubChats}
       onSelect={onSelect}
       placeholder="Search chats..."
+      align="start"
       emptyMessage="No results"
       getItemValue={(subChat) => `${subChat.name || "New Chat"} ${subChat.id}`}
       renderItem={renderItem}
@@ -150,8 +149,10 @@ const SearchHistoryPopover = memo(forwardRef<SearchHistoryPopoverRef, SearchHist
                 size="icon"
                 className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] flex-shrink-0 rounded-md flex items-center justify-center"
                 disabled={allSubChatsLength === 0}
+                aria-label="Search chats"
+                style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
               >
-                <ClockIcon className="h-4 w-4" />
+                <ClockIcon className="h-4 w-4" aria-hidden="true" />
               </Button>
             </PopoverTrigger>
           </TooltipTrigger>
@@ -210,9 +211,6 @@ export function SubChatSelector({
   const [loadingSubChats] = useAtom(loadingSubChatsAtom)
   const subChatUnseenChanges = useAtomValue(agentsSubChatUnseenChangesAtom)
   const setSubChatUnseenChanges = useSetAtom(agentsSubChatUnseenChangesAtom)
-  const [subChatsSidebarMode, setSubChatsSidebarMode] = useAtom(
-    agentsSubChatsSidebarModeAtom,
-  )
   const pendingQuestionsMap = useAtomValue(pendingUserQuestionsAtom)
 
   // Overview sidebar state - to check if widgets are visible
@@ -422,12 +420,9 @@ export function SubChatSelector({
     [onSwitchFromHistory],
   )
 
-  // Hotkey: / to open history popover when sidebar is closed (tabs mode)
+  // Hotkey: / to open the chat search dropdown.
   useEffect(() => {
     const handleHistoryHotkey = (e: KeyboardEvent) => {
-      // Only in tabs mode (sidebar closed)
-      if (subChatsSidebarMode !== "tabs") return
-
       if (
         e.key === "/" &&
         !e.metaKey &&
@@ -454,7 +449,7 @@ export function SubChatSelector({
     window.addEventListener("keydown", handleHistoryHotkey, true)
     return () =>
       window.removeEventListener("keydown", handleHistoryHotkey, true)
-  }, [subChatsSidebarMode])
+  }, [])
 
   // Keyboard shortcut: Cmd+Shift+T / Ctrl+Shift+T for new sub-chat
   // Scroll to active tab when it changes
@@ -594,8 +589,8 @@ export function SubChatSelector({
         WebkitAppRegion: "drag",
       }}
     >
-      {/* Burger button - hidden when sub-chats sidebar is open (it moves into sidebar) */}
-      {onBackToChats && subChatsSidebarMode === "tabs" && (
+      {/* Back to the main chat list */}
+      {onBackToChats && (
         <Button
           variant="ghost"
           size="icon"
@@ -612,26 +607,17 @@ export function SubChatSelector({
         </Button>
       )}
 
-      {/* Open sidebar button - only on desktop when in tabs mode */}
-      {!isMobile && subChatsSidebarMode === "tabs" && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setSubChatsSidebarMode("sidebar")}
-              className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] flex-shrink-0 rounded-md flex items-center justify-center"
-              style={{
-                // @ts-expect-error - WebKit-specific property
-                WebkitAppRegion: "no-drag",
-              }}
-            >
-              <IconOpenSidebarRight className="h-4 w-4 scale-x-[-1]" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">Open chats pane</TooltipContent>
-        </Tooltip>
-      )}
+      {/* Chat search replaces the former chats pane toggle. */}
+      <SearchHistoryPopover
+        ref={searchHistoryPopoverRef}
+        sortedSubChats={sortedSubChats}
+        loadingSubChats={loadingSubChats}
+        subChatUnseenChanges={subChatUnseenChanges}
+        pendingQuestionsMap={pendingQuestionsMap}
+        pendingPlanApprovals={pendingPlanApprovals}
+        allSubChatsLength={allSubChats.length}
+        onSelect={handleSelectFromHistory}
+      />
 
       <div
         className="relative flex-1 min-w-0 flex items-center"
@@ -652,8 +638,7 @@ export function SubChatSelector({
           ref={tabsContainerRef}
           className={cn(
             "flex items-center px-1 py-1 -my-1 gap-1 flex-1 min-w-0 overflow-x-auto scrollbar-hide pr-12",
-            // Hide tabs when sidebar is open (desktop) or when only one chat exists
-            (subChatsSidebarMode === "sidebar" && !isMobile) && "hidden",
+            // Hide tabs when only one chat exists.
             hasSingleChat && "invisible",
           )}
         >
@@ -856,53 +841,29 @@ export function SubChatSelector({
         </div>
 
         {/* Plus button - absolute positioned on right with gradient cover */}
-        {(isMobile || (!isMobile && subChatsSidebarMode === "tabs")) && (
-          <div className="absolute right-0 top-0 bottom-0 flex items-center z-20">
-            {/* Gradient to cover content peeking from the left */}
-            <div className="w-6 h-full bg-gradient-to-r from-transparent to-background" />
-            <div className="h-full flex items-center bg-background pr-1">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={onCreateNew}
-                    className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] rounded-md"
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">
-                  New chat
-                  {newAgentHotkey && <Kbd>{newAgentHotkey}</Kbd>}
-                </TooltipContent>
-              </Tooltip>
-            </div>
+        <div className="absolute right-0 top-0 bottom-0 flex items-center z-20">
+          {/* Gradient to cover content peeking from the left */}
+          <div className="w-6 h-full bg-gradient-to-r from-transparent to-background" />
+          <div className="h-full flex items-center bg-background pr-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={onCreateNew}
+                  className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] rounded-md"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                New chat
+                {newAgentHotkey && <Kbd>{newAgentHotkey}</Kbd>}
+              </TooltipContent>
+            </Tooltip>
           </div>
-        )}
-      </div>
-
-      {/* Action buttons - always visible on mobile, on desktop only in tabs mode */}
-      {(isMobile || (!isMobile && subChatsSidebarMode === "tabs")) && (
-        <div
-          className="flex items-center gap-1"
-          style={{
-            // @ts-expect-error - WebKit-specific property
-            WebkitAppRegion: "no-drag",
-          }}
-        >
-          <SearchHistoryPopover
-            ref={searchHistoryPopoverRef}
-            sortedSubChats={sortedSubChats}
-            loadingSubChats={loadingSubChats}
-            subChatUnseenChanges={subChatUnseenChanges}
-            pendingQuestionsMap={pendingQuestionsMap}
-            pendingPlanApprovals={pendingPlanApprovals}
-            allSubChatsLength={allSubChats.length}
-            onSelect={handleSelectFromHistory}
-          />
         </div>
-      )}
+      </div>
 
       {/* Diff button - visible on desktop when unified sidebar is disabled OR diff widget is hidden */}
       {/* Only show if onOpenDiff is provided (clickable action available) */}
