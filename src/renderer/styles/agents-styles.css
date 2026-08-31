@@ -7,6 +7,51 @@
    1. THEME OVERRIDES
    ======================================== */
 
+/* Sidebar surfaces derive from the active theme without changing other panels. */
+.instructor-sidebar {
+  --sidebar-background: hsl(var(--tl-background));
+  --sidebar-hover: hsl(var(--foreground) / 0.05);
+  --sidebar-selected: hsl(var(--foreground) / 0.09);
+  background: var(--sidebar-background);
+  font-family: var(--font-geist-sans, "Segoe UI"), system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.instructor-sidebar :is(button, [role="button"]):focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
+}
+
+.instructor-sidebar .sidebar-nav-item svg {
+  stroke-width: 1.5;
+}
+
+.instructor-sidebar .sidebar-nav-item[aria-current="page"] svg {
+  stroke-width: 2;
+}
+
+.instructor-sidebar .sidebar-scroll-fade {
+  --tw-gradient-from: var(--sidebar-background);
+  --tw-gradient-stops: var(--tw-gradient-from), transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .instructor-sidebar *,
+  .instructor-sidebar *::before,
+  .instructor-sidebar *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .instructor-sidebar [aria-current="page"] {
+    outline: 1px solid Highlight;
+    outline-offset: -1px;
+  }
+}
+
 [data-agents-page] {
   /* Override muted to be lighter for better code block visibility */
   --muted: 0 0% 94%;
