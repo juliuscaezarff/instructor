@@ -917,7 +917,6 @@ interface SimpleIsolatedGroupProps {
   subChatId: string
   isMobile: boolean
   sandboxSetupStatus: "cloning" | "ready" | "error"
-  isSubChatsSidebarOpen: boolean
   stickyTopClass: string
   sandboxSetupError?: string
   onRetrySetup?: () => void
@@ -947,7 +946,6 @@ function areSimpleGroupPropsEqual(
     prev.subChatId === next.subChatId &&
     prev.isMobile === next.isMobile &&
     prev.sandboxSetupStatus === next.sandboxSetupStatus &&
-    prev.isSubChatsSidebarOpen === next.isSubChatsSidebarOpen &&
     prev.stickyTopClass === next.stickyTopClass &&
     prev.sandboxSetupError === next.sandboxSetupError &&
     prev.onRetrySetup === next.onRetrySetup &&
@@ -1137,7 +1135,6 @@ interface SimpleIsolatedListProps {
   subChatId: string
   isMobile: boolean
   sandboxSetupStatus: "cloning" | "ready" | "error"
-  isSubChatsSidebarOpen: boolean
   stickyTopClass: string
   sandboxSetupError?: string
   onRetrySetup?: () => void
@@ -1155,7 +1152,6 @@ function areSimpleListPropsEqual(
     prev.subChatId === next.subChatId &&
     prev.isMobile === next.isMobile &&
     prev.sandboxSetupStatus === next.sandboxSetupStatus &&
-    prev.isSubChatsSidebarOpen === next.isSubChatsSidebarOpen &&
     prev.stickyTopClass === next.stickyTopClass &&
     prev.sandboxSetupError === next.sandboxSetupError &&
     prev.onRetrySetup === next.onRetrySetup &&
@@ -1170,7 +1166,6 @@ export const SimpleIsolatedMessagesList = memo(function SimpleIsolatedMessagesLi
   subChatId,
   isMobile,
   sandboxSetupStatus,
-  isSubChatsSidebarOpen,
   stickyTopClass,
   sandboxSetupError,
   onRetrySetup,
@@ -1191,7 +1186,6 @@ export const SimpleIsolatedMessagesList = memo(function SimpleIsolatedMessagesLi
           subChatId={subChatId}
           isMobile={isMobile}
           sandboxSetupStatus={sandboxSetupStatus}
-          isSubChatsSidebarOpen={isSubChatsSidebarOpen}
           stickyTopClass={stickyTopClass}
           sandboxSetupError={sandboxSetupError}
           onRetrySetup={onRetrySetup}
