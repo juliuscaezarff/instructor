@@ -25,8 +25,6 @@ export {
   // Sidebar atoms
   agentsSidebarOpenAtom,
   agentsSidebarWidthAtom,
-  agentsSubChatsSidebarModeAtom,
-  agentsSubChatsSidebarWidthAtom,
 
   // Preview atoms
   previewPathAtomFamily,
