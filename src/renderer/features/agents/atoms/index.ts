@@ -394,20 +394,6 @@ export const diffFilesCollapsedAtomFamily = atomFamily((chatId: string) =>
   ),
 )
 
-// Sub-chats display mode - tabs (horizontal) or sidebar (vertical list)
-// Window-scoped so each window can have its own layout preference
-export const agentsSubChatsSidebarModeAtom = atomWithWindowStorage<
-  "tabs" | "sidebar"
->("agents-subchats-mode", "tabs", { getOnInit: true })
-
-// Sub-chats sidebar width (left side of chat area)
-export const agentsSubChatsSidebarWidthAtom = atomWithStorage<number>(
-  "agents-subchats-sidebar-width",
-  200,
-  undefined,
-  { getOnInit: true },
-)
-
 // Track chats with unseen changes (finished streaming but user hasn't opened them)
 // Updated by onFinish callback in Chat instances
 export const agentsUnseenChangesAtom = atom<Set<string>>(new Set<string>())
