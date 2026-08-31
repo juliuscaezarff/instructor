@@ -15,19 +15,17 @@ interface AgentsHeaderControlsProps {
   isSidebarOpen: boolean
   onToggleSidebar: () => void
   hasUnseenChanges?: boolean
-  isSubChatsSidebarOpen?: boolean
 }
 
 export function AgentsHeaderControls({
   isSidebarOpen,
   onToggleSidebar,
   hasUnseenChanges = false,
-  isSubChatsSidebarOpen = false,
 }: AgentsHeaderControlsProps) {
   const toggleSidebarHotkey = useResolvedHotkeyDisplay("toggle-sidebar")
 
-  // Only show open button when both sidebars are closed
-  if (isSidebarOpen || isSubChatsSidebarOpen) return null
+  // Only show the open button when the main sidebar is closed.
+  if (isSidebarOpen) return null
 
   return (
     <TooltipProvider>
