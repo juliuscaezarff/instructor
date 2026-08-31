@@ -105,7 +105,6 @@ import {
   agentsPlanSidebarWidthAtom,
   agentsPreviewSidebarOpenAtom,
   agentsPreviewSidebarWidthAtom,
-  agentsSubChatsSidebarModeAtom,
   agentsSubChatUnseenChangesAtom,
   agentsUnseenChangesAtom,
   clearLoading,
@@ -340,17 +339,10 @@ function getFirstSubChatId(
 
 // Layout constants for chat header and sticky messages
 const CHAT_LAYOUT = {
-  // Padding top for chat content
-  paddingTopSidebarOpen: "pt-12", // When sidebar open (absolute header overlay)
-  paddingTopSidebarClosed: "pt-4", // When sidebar closed (regular header)
-  paddingTopMobile: "pt-14", // Mobile has header
   // Sticky message top position (title is now in flex above scroll, so top-0)
-  stickyTopSidebarOpen: "top-0", // When sidebar open (desktop, absolute header)
-  stickyTopSidebarClosed: "top-0", // When sidebar closed (desktop, flex header)
+  stickyTopDesktop: "top-0",
   stickyTopMobile: "top-0", // Mobile (flex header, so top-0)
-  // Header padding when absolute
-  headerPaddingSidebarOpen: "pt-1.5 pb-12 px-3 pl-2",
-  headerPaddingSidebarClosed: "p-2 pt-1.5",
+  headerPadding: "p-2 pt-1.5",
 } as const
 
 // Codex icon (OpenAI style)
@@ -1747,7 +1739,6 @@ const ChatViewInner = memo(function ChatViewInner({
   sandboxSetupStatus = "ready",
   sandboxSetupError,
   onRetrySetup,
-  isSubChatsSidebarOpen = false,
   sandboxId,
   projectPath,
   isArchived = false,
@@ -1777,7 +1768,6 @@ const ChatViewInner = memo(function ChatViewInner({
   sandboxSetupStatus?: "cloning" | "ready" | "error"
   sandboxSetupError?: string
   onRetrySetup?: () => void
-  isSubChatsSidebarOpen?: boolean
   sandboxId?: string
   projectPath?: string
   isArchived?: boolean
@@ -4189,9 +4179,7 @@ const ChatViewInner = memo(function ChatViewInner({
   // Compute sticky top class for user messages
   const stickyTopClass = isMobile
     ? CHAT_LAYOUT.stickyTopMobile
-    : isSubChatsSidebarOpen
-      ? CHAT_LAYOUT.stickyTopSidebarOpen
-      : CHAT_LAYOUT.stickyTopSidebarClosed
+    : CHAT_LAYOUT.stickyTopDesktop
 
   // Sync messages to Jotai store for isolated rendering
   // CRITICAL: Only sync from the ACTIVE tab to prevent overwriting global atoms
@@ -4286,8 +4274,6 @@ const ChatViewInner = memo(function ChatViewInner({
     })
   }, [currentSearchMatch])
 
-  // Calculate top offset for search bar based on sub-chat selector
-  const searchBarTopOffset = isSubChatsSidebarOpen ? "52px" : undefined
   const shouldShowStatusCard =
     isStreaming || isCompacting || changedFilesForSubChat.length > 0
   const shouldShowStackedCards =
@@ -4388,15 +4374,12 @@ const ChatViewInner = memo(function ChatViewInner({
         )}
 
         {/* Chat search bar */}
-        <ChatSearchBar messages={messages} topOffset={searchBarTopOffset} />
+        <ChatSearchBar messages={messages} />
 
         {/* Chat title - flex above scroll area (desktop only) */}
         {!isMobile && (
         <div
-          className={cn(
-            "flex-shrink-0 pb-2",
-            isSubChatsSidebarOpen ? "pt-[52px]" : "pt-2",
-          )}
+          className="flex-shrink-0 py-2"
         >
           <ChatTitleEditor
             name={subChatName}
@@ -4895,7 +4878,6 @@ export function ChatView({
   }, [setDiffCache])
   const [diffMode, setDiffMode] = useAtom(diffViewModeAtom)
   const [diffDisplayMode, setDiffDisplayMode] = useAtom(diffViewDisplayModeAtom)
-  const subChatsSidebarMode = useAtomValue(agentsSubChatsSidebarModeAtom)
 
 
   // Force narrow width when switching to side-peek mode (from dialog/fullscreen)
@@ -7060,14 +7042,6 @@ Make sure to preserve all functionality from both branches when resolving confli
     return getFirstSubChatId(agentSubChats) === activeSubChatId
   }, [activeSubChatId, agentSubChats])
 
-  // Determine if chat header should be hidden
-  const shouldHideChatHeader =
-    hideHeader ||
-    (subChatsSidebarMode === "sidebar" &&
-    isPreviewSidebarOpen &&
-    isDiffSidebarOpen &&
-    !isMobileFullscreen)
-
   // No early return - let the UI render with loading state handled by activeChat check below
 
   return (
@@ -7090,21 +7064,15 @@ Make sure to preserve all functionality from both branches when resolving confli
           className="flex-1 flex flex-col overflow-hidden relative"
           style={{ minWidth: "350px" }}
         >
-          {/* SubChatSelector header - absolute when sidebar open (desktop only), regular div otherwise */}
-          {!shouldHideChatHeader && (
+          {/* Chat navigation header */}
+          {!hideHeader && (
             <div
               className={cn(
                 "relative z-20 pointer-events-none",
-                // Mobile: always flex; Desktop: absolute when sidebar open, flex when closed
-                !isMobileFullscreen && subChatsSidebarMode === "sidebar"
-                  ? `absolute top-0 left-0 right-0 ${CHAT_LAYOUT.headerPaddingSidebarOpen}`
-                  : `flex-shrink-0 ${CHAT_LAYOUT.headerPaddingSidebarClosed}`,
+                `flex-shrink-0 ${CHAT_LAYOUT.headerPadding}`,
               )}
             >
-              {/* Gradient background - only when not absolute */}
-              {(isMobileFullscreen || subChatsSidebarMode !== "sidebar") && (
-                <div className="absolute inset-0 bg-gradient-to-b from-background via-background to-transparent" />
-              )}
+              <div className="absolute inset-0 bg-gradient-to-b from-background via-background to-transparent" />
               <div className="pointer-events-auto flex items-center justify-between relative">
                 <div className="flex-1 min-w-0 flex items-center gap-2">
                   {/* Mobile header - simplified with chat name as trigger */}
@@ -7132,9 +7100,6 @@ Make sure to preserve all functionality from both branches when resolving confli
                         isSidebarOpen={isSidebarOpen}
                         onToggleSidebar={onToggleSidebar}
                         hasUnseenChanges={hasAnyUnseenChanges}
-                        isSubChatsSidebarOpen={
-                          subChatsSidebarMode === "sidebar"
-                        }
                       />
                       <SubChatSelector
                         onCreateNew={handleCreateNewSubChat}
@@ -7338,7 +7303,6 @@ Make sure to preserve all functionality from both branches when resolving confli
                       repository={repository}
                       streamId={agentChatStore.getStreamId(subChatId)}
                       isMobile={isMobileFullscreen}
-                      isSubChatsSidebarOpen={subChatsSidebarMode === "sidebar"}
                       sandboxId={sandboxId || undefined}
                       projectPath={worktreePath || undefined}
                       isArchived={isArchived}
