@@ -326,7 +326,7 @@ const CommandItem = React.forwardRef<HTMLButtonElement, CommandItemProps>(
         data-disabled={disabled || undefined}
         className={cn(
           overlayItem,
-          "w-full text-left",
+          "w-[calc(100%-0.5rem)] text-left",
           isSelected && "bg-accent dark:bg-neutral-800 text-accent-foreground",
           disabled && "opacity-40 pointer-events-none",
           className,
