@@ -15,6 +15,7 @@ interface TodoItem {
 interface TodoWidgetProps {
   /** Active sub-chat ID to get todos from */
   subChatId: string | null
+  showEmpty?: boolean
 }
 
 // Pie-style progress circle - fills sectors like pizza slices
@@ -159,7 +160,7 @@ const TodoListItem = ({
  * Prefers new task tools data when available.
  * Memoized to prevent re-renders when parent updates.
  */
-export const TodoWidget = memo(function TodoWidget({ subChatId }: TodoWidgetProps) {
+export const TodoWidget = memo(function TodoWidget({ subChatId, showEmpty = false }: TodoWidgetProps) {
   // Get todos from the legacy TodoWrite tool
   const todosAtom = useMemo(
     () => currentTodosAtomFamily(subChatId || "default"),
@@ -221,7 +222,7 @@ export const TodoWidget = memo(function TodoWidget({ subChatId }: TodoWidgetProp
 
   // Don't render if no todos
   if (todos.length === 0) {
-    return null
+    return showEmpty ? <p role="status" className="p-6 text-center text-sm text-muted-foreground">No tasks yet. Tasks created by the agent will appear here.</p> : null
   }
 
   return (
