@@ -28,6 +28,11 @@ export function isSharedTerminalScope(scopeKey: string): boolean {
   return scopeKey.startsWith("path:")
 }
 
+/** Keep legacy sessions in their original scope; isolate each new panel tab. */
+export function getTerminalTabScopeKey(scopeKey: string, tabId: string | null): string {
+  return !tabId || tabId === "terminal" ? scopeKey : `${scopeKey}:panel:${tabId}`
+}
+
 /**
  * Escape file paths for shell usage.
  * Wraps paths containing spaces in quotes.
