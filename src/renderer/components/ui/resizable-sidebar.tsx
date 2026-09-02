@@ -8,6 +8,8 @@ import { Kbd } from "./kbd"
 
 interface ResizableSidebarProps {
   isOpen: boolean
+  /** Preserve mounted content when collapsed (for stateful tool panels). */
+  keepMounted?: boolean
   onClose: () => void
   widthAtom: WritableAtom<number, [number], void>
   minWidth?: number
@@ -41,6 +43,7 @@ const RESIZE_CLOSE_THRESHOLD = 48
 
 export function ResizableSidebar({
   isOpen,
+  keepMounted = false,
   onClose,
   widthAtom,
   minWidth = DEFAULT_MIN_WIDTH,
@@ -383,7 +386,7 @@ export function ResizableSidebar({
   return (
     <>
       <AnimatePresence>
-        {isOpen && (
+        {(isOpen || keepMounted) && (
           <motion.div
             ref={sidebarRef}
             initial={
@@ -414,7 +417,7 @@ export function ResizableSidebar({
               ease: [0.4, 0, 0.2, 1],
             }}
             className={`bg-transparent flex flex-col text-xs h-full relative ${className}`}
-            style={{ overflow: "hidden", ...style }}
+            style={{ overflow: "hidden", ...style, ...(!isOpen ? { display: "none" } : {}) }}
             {...(dataAttributes ? Object.fromEntries(
               Object.entries(dataAttributes).map(([key, value]) => [`data-${key}`, value])
             ) : {})}
