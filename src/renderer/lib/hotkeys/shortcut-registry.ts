@@ -44,7 +44,7 @@ export const ALL_SHORTCUT_ACTIONS: ShortcutAction[] = [
   // ============================================
   {
     id: "toggle-details",
-    label: "View details",
+    label: "Toggle tool panel",
     category: "workspaces",
     defaultKeys: ["cmd", "shift", "\\"],
   },
