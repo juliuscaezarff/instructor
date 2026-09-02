@@ -1,3 +1,4 @@
+import { ViewerActivityContext, useViewerActive } from "./viewer-activity"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Editor, { type Monaco } from "@monaco-editor/react"
 import type { editor } from "monaco-editor"
@@ -52,13 +53,14 @@ import {
 } from "../../agents/atoms"
 import { useFileContent, getErrorMessage } from "../hooks/use-file-content"
 import { getMonacoLanguage, getFileViewerType } from "../utils/language-map"
-import { getFileName } from "../utils/file-utils"
+import { getFileName, isAbsoluteFilePath } from "../utils/file-utils"
 import { defaultEditorOptions, getMonacoTheme, registerMonacoTheme } from "./monaco-config"
 import { useVSCodeTheme } from "@/lib/themes"
 import { ImageViewer } from "./image-viewer"
 import { MarkdownViewer } from "./markdown-viewer"
 
 interface FileViewerSidebarProps {
+  isActive?: boolean
   filePath: string
   projectPath: string
   onClose: () => void
@@ -208,7 +210,7 @@ function CodeViewerHeader({
 
   const handleOpenInEditor = useCallback(() => {
     // Accept both Unix (/path) and Windows (C:\path) absolute paths
-    const isAbsolute = filePath.startsWith("/") || /^[A-Za-z]:[/\\]/.test(filePath)
+    const isAbsolute = isAbsoluteFilePath(filePath)
     if (isAbsolute) {
       openInAppMutation.mutate({ path: filePath, app: preferredEditor })
     }
@@ -324,7 +326,11 @@ function CodeViewerHeader({
 /**
  * FileViewerSidebar - Routes to appropriate viewer based on file type
  */
-export function FileViewerSidebar({
+export function FileViewerSidebar({ isActive = true, ...props }: FileViewerSidebarProps) {
+  return <ViewerActivityContext.Provider value={isActive}><FileViewerContent {...props} /></ViewerActivityContext.Provider>
+}
+
+function FileViewerContent({
   filePath,
   projectPath,
   onClose,
@@ -474,6 +480,7 @@ function CodeViewer({
   projectPath: string
   onClose: () => void
 }) {
+  const isActive = useViewerActive()
   const fileName = getFileName(filePath)
   const language = getMonacoLanguage(filePath)
   const { resolvedTheme } = useTheme()
@@ -496,14 +503,15 @@ function CodeViewer({
   // Handle ⌘⇧O hotkey to open current file in external editor
   useEffect(() => {
     const handler = () => {
-      const absolutePath = filePath.startsWith("/") ? filePath : undefined
+      if (!isActive) return
+      const absolutePath = isAbsoluteFilePath(filePath) ? filePath : undefined
       if (absolutePath) {
         openInAppMutation.mutate({ path: absolutePath, app: preferredEditor })
       }
     }
     window.addEventListener("open-file-in-editor", handler)
     return () => window.removeEventListener("open-file-in-editor", handler)
-  }, [filePath, preferredEditor, openInAppMutation])
+  }, [filePath, preferredEditor, openInAppMutation, isActive])
 
   // Compute Monaco theme: use custom user theme if available, otherwise fallback
   const monacoTheme = useMemo(() => {
@@ -525,6 +533,7 @@ function CodeViewer({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isActive || e.defaultPrevented || !containerRef.current?.contains(document.activeElement)) return
       if (e.key === "Escape") {
         if (contextMenu) {
           setContextMenu(null)
@@ -540,7 +549,7 @@ function CodeViewer({
     }
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [onClose, contextMenu])
+  }, [onClose, contextMenu, isActive])
 
   // Custom context menu handler for Monaco
   useEffect(() => {
