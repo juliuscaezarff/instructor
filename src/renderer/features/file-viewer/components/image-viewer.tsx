@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { fileViewerDisplayModeAtom } from "../../agents/atoms"
 import { getFileIconByExtension } from "../../agents/mentions/agents-file-mention"
-import { getFileName } from "../utils/file-utils"
+import { getFileName, resolveFilePath } from "../utils/file-utils"
 
 const FILE_VIEWER_MODES = [
   { value: "side-peek" as const, label: "Sidebar", Icon: IconSidePeek },
@@ -54,7 +54,7 @@ export function ImageViewer({
   const openInEditorHotkey = useResolvedHotkeyDisplay("open-in-editor")
 
   const absolutePath = useMemo(() => {
-    return filePath.startsWith("/") ? filePath : `${projectPath}/${filePath}`
+    return resolveFilePath(projectPath, filePath)
   }, [filePath, projectPath])
 
   const handleOpenInEditor = useCallback(() => {
