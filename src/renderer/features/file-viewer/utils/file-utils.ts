@@ -2,8 +2,32 @@
  * Get file name from path
  */
 export function getFileName(filePath: string): string {
-  const parts = filePath.split("/")
+  const parts = filePath.split(/[\\/]/)
   return parts[parts.length - 1] || filePath
+}
+
+export function isAbsoluteFilePath(filePath: string): boolean {
+  const normalized = filePath.replace(/\\/g, "/")
+  return normalized.startsWith("/") || /^[A-Za-z]:\//.test(normalized)
+}
+
+export function resolveFilePath(projectPath: string, filePath: string): string {
+  const normalized = filePath.replace(/\\/g, "/")
+  return isAbsoluteFilePath(normalized)
+    ? normalized
+    : `${projectPath.replace(/\\/g, "/").replace(/\/$/, "")}/${normalized}`
+}
+
+export function relativeFilePath(projectPath: string, filePath: string): string {
+  const normalized = filePath.replace(/\\/g, "/")
+  const project = projectPath.replace(/\\/g, "/").replace(/\/$/, "")
+  const windows = /^[A-Za-z]:\//.test(project) || project.startsWith("//")
+  const pathKey = windows ? normalized.toLowerCase() : normalized
+  const projectKey = windows ? project.toLowerCase() : project
+  if (pathKey === projectKey) return ""
+  return pathKey.startsWith(projectKey + "/")
+    ? normalized.slice(project.length + 1)
+    : normalized
 }
 
 /**
