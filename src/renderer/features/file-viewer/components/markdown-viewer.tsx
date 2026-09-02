@@ -1,3 +1,4 @@
+import { useViewerActive } from "./viewer-activity"
 import { useState, useMemo, useCallback, useEffect, useRef } from "react"
 import Editor from "@monaco-editor/react"
 import { useTheme } from "next-themes"
@@ -42,7 +43,7 @@ const FILE_VIEWER_MODES = [
   { value: "full-page" as const, label: "Fullscreen", Icon: IconFullPage },
 ]
 import { defaultEditorOptions, getMonacoTheme } from "./monaco-config"
-import { getFileName } from "../utils/file-utils"
+import { getFileName, isAbsoluteFilePath, resolveFilePath, relativeFilePath } from "../utils/file-utils"
 
 interface MarkdownViewerProps {
   filePath: string
@@ -55,6 +56,8 @@ export function MarkdownViewer({
   projectPath,
   onClose,
 }: MarkdownViewerProps) {
+  const isActive = useViewerActive()
+  const containerRef = useRef<HTMLDivElement>(null)
   const fileName = getFileName(filePath)
   const { resolvedTheme } = useTheme()
   const monacoTheme = getMonacoTheme(resolvedTheme || "dark")
@@ -67,7 +70,7 @@ export function MarkdownViewer({
   }, [])
 
   const absolutePath = useMemo(() => {
-    return filePath.startsWith("/") ? filePath : `${projectPath}/${filePath}`
+    return resolveFilePath(projectPath, filePath)
   }, [filePath, projectPath])
 
   const { data, isLoading, error, refetch } = trpc.files.readTextFile.useQuery(
@@ -81,11 +84,7 @@ export function MarkdownViewer({
   }, [refetch])
 
   const relativePath = useMemo(() => {
-    if (!filePath.startsWith("/")) return filePath
-    if (filePath.startsWith(projectPath)) {
-      return filePath.slice(projectPath.length + 1)
-    }
-    return filePath
+    return relativeFilePath(projectPath, filePath)
   }, [projectPath, filePath])
 
   trpc.files.watchChanges.useSubscription(
@@ -110,6 +109,7 @@ export function MarkdownViewer({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isActive || !containerRef.current?.contains(document.activeElement) || e.defaultPrevented || (e.target instanceof HTMLElement && e.target.closest('[role="dialog"], [role="menu"]'))) return
       if (e.key === "Escape") {
         e.preventDefault()
         onClose()
@@ -117,11 +117,11 @@ export function MarkdownViewer({
     }
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [onClose])
+  }, [onClose, isActive])
 
   if (isLoading) {
     return (
-      <div className="flex flex-col h-full bg-background">
+      <div ref={containerRef} className="flex flex-col h-full bg-background" tabIndex={-1}>
         <Header
           fileName={fileName}
           filePath={filePath}
@@ -150,7 +150,7 @@ export function MarkdownViewer({
     }
 
     return (
-      <div className="flex flex-col h-full bg-background">
+      <div ref={containerRef} className="flex flex-col h-full bg-background" tabIndex={-1}>
         <Header
           fileName={fileName}
           filePath={filePath}
@@ -171,7 +171,7 @@ export function MarkdownViewer({
   const content = data?.ok ? data.content : ""
 
   return (
-    <div className="flex flex-col h-full bg-background">
+    <div ref={containerRef} className="flex flex-col h-full bg-background" tabIndex={-1}>
       <Header
         fileName={fileName}
         filePath={filePath}
@@ -233,7 +233,7 @@ function Header({
   const openInEditorHotkey = useResolvedHotkeyDisplay("open-in-editor")
 
   const handleOpenInEditor = useCallback(() => {
-    const absolutePath = filePath.startsWith("/") ? filePath : undefined
+    const absolutePath = isAbsoluteFilePath(filePath) ? filePath : undefined
     if (absolutePath) {
       openInAppMutation.mutate({ path: absolutePath, app: preferredEditor })
     }
