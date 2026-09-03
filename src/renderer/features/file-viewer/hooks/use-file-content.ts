@@ -1,4 +1,5 @@
 import { useMemo, useEffect, useRef } from "react"
+import { resolveFilePath, relativeFilePath } from "../utils/file-utils"
 import { trpc } from "../../../lib/trpc"
 
 /**
@@ -45,12 +46,7 @@ export function useFileContent(
 ): FileContentResult {
   const absolutePath = useMemo(() => {
     if (!projectPath || !filePath) return null
-    // Normalize separators for Windows compatibility
-    const normalizedFile = filePath.replace(/\\/g, "/")
-    const normalizedProject = projectPath.replace(/\\/g, "/")
-    return normalizedFile.startsWith("/") || /^[A-Za-z]:/.test(normalizedFile)
-      ? normalizedFile
-      : `${normalizedProject}/${normalizedFile}`
+    return resolveFilePath(projectPath, filePath)
   }, [projectPath, filePath])
 
   const enabled = !!absolutePath
@@ -72,13 +68,7 @@ export function useFileContent(
   // Compute relative path for matching against file change events
   const relativePath = useMemo(() => {
     if (!projectPath || !filePath) return null
-    if (!filePath.startsWith("/")) return filePath
-    const projectPathWithSep = projectPath.endsWith("/") ? projectPath : `${projectPath}/`
-    if (filePath.startsWith(projectPathWithSep)) {
-      return filePath.slice(projectPathWithSep.length)
-    }
-    if (filePath === projectPath) return ""
-    return filePath
+    return relativeFilePath(projectPath, filePath)
   }, [projectPath, filePath])
 
   // Subscribe to file changes and refetch when the viewed file changes

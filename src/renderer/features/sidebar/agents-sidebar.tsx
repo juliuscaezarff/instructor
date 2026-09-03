@@ -2018,8 +2018,8 @@ export function AgentsSidebar({
   const previousChatId = useAtomValue(previousAgentChatIdAtom);
   const autoAdvanceTarget = useAtomValue(autoAdvanceTargetAtom);
   const [selectedDraftId, setSelectedDraftId] = useAtom(selectedDraftIdAtom);
-  const setShowNewChatForm = useSetAtom(showNewChatFormAtom);
-  const setDesktopView = useSetAtom(desktopViewAtom);
+  const [showNewChatForm, setShowNewChatForm] = useAtom(showNewChatFormAtom);
+  const [desktopView, setDesktopView] = useAtom(desktopViewAtom);
   const [loadingSubChats] = useAtom(loadingSubChatsAtom);
   const pendingQuestions = useAtomValue(pendingUserQuestionsAtom);
   const setGlobalCommandMenuOpen = useSetAtom(globalCommandMenuOpenAtom);
@@ -2089,11 +2089,6 @@ export function AgentsSidebar({
   // Pinned chats (stored in localStorage per project)
   const [pinnedChatIds, setPinnedChatIds] = useState<Set<string>>(new Set());
 
-  // Header nav row active state (visual only for Home/Pull requests, Kanban is wired below)
-  const [activeNav, setActiveNav] = useState<
-    "home" | "pull-requests" | "kanban"
-  >("home");
-
   // Collapsed project groups in the Activity feed (stored in localStorage)
   const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(
     new Set(),
@@ -2135,12 +2130,30 @@ export function AgentsSidebar({
   const kanbanEnabled = useAtomValue(betaKanbanEnabledAtom);
   const openKanbanHotkey = useResolvedHotkeyDisplay("open-kanban");
   const handleOpenKanban = useCallback(() => {
-    setActiveNav("kanban");
     setSelectedChatId(null);
     setSelectedDraftId(null);
     setShowNewChatForm(false);
     setDesktopView(null);
   }, [setSelectedChatId, setSelectedDraftId, setShowNewChatForm, setDesktopView]);
+
+  const handleOpenHome = useCallback(() => {
+    setSelectedChatId(null);
+    setSelectedDraftId(null);
+    setShowNewChatForm(true);
+    setDesktopView(null);
+  }, [setSelectedChatId, setSelectedDraftId, setShowNewChatForm, setDesktopView]);
+
+  const handleOpenPullRequests = useCallback(() => {
+    setSelectedChatId(null);
+    setSelectedDraftId(null);
+    setShowNewChatForm(false);
+    setDesktopView("pull-requests");
+  }, [setSelectedChatId, setSelectedDraftId, setShowNewChatForm, setDesktopView]);
+
+  const isHomeActive =
+    desktopView === null && !selectedChatId && showNewChatForm;
+  const isKanbanActive =
+    desktopView === null && !selectedChatId && !showNewChatForm;
 
   // Opens the archive popover from the logo/team dropdown menu
   const setArchivePopoverOpen = useSetAtom(archivePopoverOpenAtom);
@@ -3665,20 +3678,20 @@ export function AgentsSidebar({
         <SidebarNavItem
           icon={Home}
           label="Home"
-          isActive={activeNav === "home"}
-          onClick={() => setActiveNav("home")}
+          isActive={isHomeActive}
+          onClick={handleOpenHome}
         />
         <SidebarNavItem
           icon={GitPullRequest}
           label="Pull requests"
-          isActive={activeNav === "pull-requests"}
-          onClick={() => setActiveNav("pull-requests")}
+          isActive={desktopView === "pull-requests"}
+          onClick={handleOpenPullRequests}
         />
         {kanbanEnabled && (
           <SidebarNavItem
             icon={Columns3}
             label="Kanban"
-            isActive={activeNav === "kanban"}
+            isActive={isKanbanActive}
             onClick={handleOpenKanban}
             tooltip={
               openKanbanHotkey ? (

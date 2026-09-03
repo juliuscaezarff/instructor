@@ -7,11 +7,6 @@ import {
   agentsSubChatUnseenChangesAtom,
   pendingUserQuestionsAtom,
 } from "../atoms"
-import {
-  widgetVisibilityAtomFamily,
-  unifiedSidebarEnabledAtom,
-} from "../../details-sidebar/atoms"
-import { chatSourceModeAtom } from "../../../lib/atoms"
 import { trpc } from "../../../lib/trpc"
 import { Plus, AlignJustify, Play, TerminalSquare, X } from "lucide-react"
 import {
@@ -212,22 +207,6 @@ export function SubChatSelector({
   const subChatUnseenChanges = useAtomValue(agentsSubChatUnseenChangesAtom)
   const setSubChatUnseenChanges = useSetAtom(agentsSubChatUnseenChangesAtom)
   const pendingQuestionsMap = useAtomValue(pendingUserQuestionsAtom)
-
-  // Overview sidebar state - to check if widgets are visible
-  const isUnifiedSidebarEnabled = useAtomValue(unifiedSidebarEnabledAtom)
-  const chatSourceMode = useAtomValue(chatSourceModeAtom)
-  const widgetVisibilityAtom = useMemo(
-    () => widgetVisibilityAtomFamily(chatId || ""),
-    [chatId],
-  )
-  const widgetVisibility = useAtomValue(widgetVisibilityAtom)
-
-  // Show standalone buttons when:
-  // 1. Unified sidebar is disabled (use legacy sidebars), OR
-  // 2. Unified sidebar is enabled but the widget is hidden by user, OR
-  // 3. Sandbox mode (DetailsSidebar doesn't render without worktreePath)
-  const showDiffButton = !isUnifiedSidebarEnabled || !widgetVisibility.includes("diff") || chatSourceMode === "sandbox"
-  const showTerminalButton = !isUnifiedSidebarEnabled || !widgetVisibility.includes("terminal")
 
   // Resolved hotkeys for tooltips
   const openDiffHotkey = useResolvedHotkeyDisplay("open-diff")
@@ -867,7 +846,7 @@ export function SubChatSelector({
 
       {/* Diff button - visible on desktop when unified sidebar is disabled OR diff widget is hidden */}
       {/* Only show if onOpenDiff is provided (clickable action available) */}
-      {!isMobile && canOpenDiff && showDiffButton && onOpenDiff && (
+      {!isMobile && canOpenDiff && onOpenDiff && (
         <div
           className="rounded-md bg-background/10 backdrop-blur-[10px] flex items-center justify-center"
           style={{
@@ -896,7 +875,7 @@ export function SubChatSelector({
       )}
 
       {/* Terminal button - visible on desktop when unified sidebar is disabled OR terminal widget is hidden, and terminal is not already open */}
-      {!isMobile && canOpenTerminal && showTerminalButton && !isTerminalOpen && (
+      {!isMobile && canOpenTerminal && !isTerminalOpen && (
         <div
           className="rounded-md bg-background/10 backdrop-blur-[10px] flex items-center justify-center"
           style={{

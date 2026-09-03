@@ -368,7 +368,7 @@ export function Terminal({
   // Keyboard shortcut for search
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "f" && e.metaKey && !e.shiftKey) {
+      if (containerRef.current?.contains(document.activeElement) && e.key === "f" && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
         e.preventDefault()
         setIsSearchOpen((prev) => !prev)
       }
