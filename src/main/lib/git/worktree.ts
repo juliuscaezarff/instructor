@@ -133,6 +133,7 @@ export async function createWorktree(
 	branch: string,
 	worktreePath: string,
 	startPoint = "origin/main",
+	disableHooks = false,
 ): Promise<void> {
 	const usesLfs = await repoUsesLfs(mainRepoPath);
 
@@ -170,6 +171,7 @@ export async function createWorktree(
 		await execFileAsync(
 			"git",
 			[
+				...(disableHooks ? ["-c", `core.hooksPath=${devNull}`] : []),
 				"-C",
 				mainRepoPath,
 				"worktree",
@@ -897,6 +899,8 @@ export interface WorktreeResult {
 }
 
 export interface CreateWorktreeForChatOptions {
+	/** PR checkouts must stay isolated and never run repository setup implicitly. */
+	isolatedPullRequest?: boolean;
 	onSetupComplete?: (result: WorktreeSetupResult) => void;
 }
 
@@ -920,6 +924,7 @@ export async function createWorktreeForChat(
 		const isRepo = await git.checkIsRepo();
 
 		if (!isRepo) {
+			if (options?.isolatedPullRequest) throw new Error("The project is not a Git repository.");
 			return { success: true, worktreePath: projectPath };
 		}
 
@@ -937,7 +942,10 @@ export async function createWorktreeForChat(
 		// For remote branches or when type is not specified, use origin/{branch}
 		const startPoint = branchType === "local" ? baseBranch : `origin/${baseBranch}`;
 
-		await createWorktree(projectPath, branch, worktreePath, startPoint);
+		await createWorktree(projectPath, branch, worktreePath, startPoint, options?.isolatedPullRequest);
+		if (options?.isolatedPullRequest) {
+			return { success: true, worktreePath, branch, baseBranch };
+		}
 
 		// Run worktree setup commands in BACKGROUND (don't block chat creation)
 		// This allows the user to start chatting immediately while deps install
