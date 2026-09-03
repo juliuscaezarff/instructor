@@ -2,6 +2,9 @@ import { describe, expect, it } from "bun:test"
 import {
   aggregatePullRequestResults,
   deduplicateGitHubRepositories,
+  normalizePullRequestActivity,
+  normalizePullRequestFileDiff,
+  normalizePullRequestFiles,
   normalizePullRequestSummary,
   type PullRequestRepositoryFailure,
   type PullRequestSummary,
@@ -118,5 +121,108 @@ describe("pull request normalization", () => {
       failure: 1,
       pending: 1,
     })
+  })
+
+  it("normalizes changed files and applies the bounded file limit", () => {
+    const files = Array.from({ length: 302 }, (_, index) => ({
+      path: `src/file-${index}.ts`,
+      additions: index,
+      deletions: 1,
+      changeType: index === 0 ? "ADDED" : "MODIFIED",
+    }))
+
+    const result = normalizePullRequestFiles(files)
+
+    expect(result.total).toBe(302)
+    expect(result.items).toHaveLength(300)
+    expect(result.truncated).toBe(true)
+    expect(result.items[0]).toEqual({
+      index: 0,
+      path: "src/file-0.ts",
+      additions: 0,
+      deletions: 1,
+      status: "added",
+    })
+  })
+
+  it("combines commits, comments, and reviews in chronological order", () => {
+    const result = normalizePullRequestActivity({
+      commits: [
+        {
+          oid: "abcdef1234567890",
+          messageHeadline: "Implement details",
+          messageBody: "Keep the data lazy",
+          authoredDate: "2026-09-03T10:00:00.000Z",
+          committedDate: "2026-09-03T10:00:00.000Z",
+          authors: [{ login: "developer" }],
+        },
+      ],
+      comments: [
+        {
+          id: "comment-1",
+          author: { login: "reviewer" },
+          body: "Looks good",
+          createdAt: "2026-09-03T11:00:00.000Z",
+        },
+      ],
+      reviews: [
+        {
+          id: "review-1",
+          author: { login: "reviewer" },
+          body: "Approved",
+          state: "APPROVED",
+          submittedAt: "2026-09-03T12:00:00.000Z",
+        },
+      ],
+    })
+
+    expect(result.items.map((item) => item.kind)).toEqual([
+      "commit",
+      "comment",
+      "review",
+    ])
+    expect(result.total).toBe(3)
+    expect(result.truncated).toBe(false)
+  })
+
+  it("does not expose unavailable or oversized patch content", () => {
+    const binary = normalizePullRequestFileDiff({
+      filename: "public/logo.png",
+      status: "modified",
+      additions: 0,
+      deletions: 0,
+    })
+    const oversized = normalizePullRequestFileDiff({
+      filename: "src/generated.ts",
+      status: "modified",
+      additions: 5_001,
+      deletions: 0,
+      patch: Array.from({ length: 5_001 }, () => "+generated").join("\n"),
+    })
+
+    expect(binary.patch).toBeUndefined()
+    expect(binary.truncated).toBe(false)
+    expect(binary.unavailableReason).toContain("binary")
+    expect(oversized.patch).toBeUndefined()
+    expect(oversized.truncated).toBe(true)
+  })
+
+  it("bounds oversized activity bodies", () => {
+    const result = normalizePullRequestActivity({
+      commits: [],
+      reviews: [],
+      comments: [
+        {
+          id: "large-comment",
+          author: { login: "reviewer" },
+          body: "x".repeat(50_001),
+          createdAt: "2026-09-03T11:00:00.000Z",
+        },
+      ],
+    })
+
+    expect(result.truncated).toBe(true)
+    expect(result.items[0]?.body).toHaveLength(50_000)
+    expect(result.items[0]?.bodyTruncated).toBe(true)
   })
 })
