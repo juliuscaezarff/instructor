@@ -28,6 +28,69 @@ const GHReviewSchema = z.object({
   state: z.string(),
 })
 
+const GHPullRequestFileSchema = z.object({
+  path: z.string(),
+  additions: z.number().default(0),
+  deletions: z.number().default(0),
+  changeType: z.string().default("MODIFIED"),
+})
+
+const GHPullRequestFilesSchema = z.object({
+  files: z.array(GHPullRequestFileSchema).default([]),
+  changedFiles: z.number().int().nonnegative().optional(),
+})
+
+const GHCommitSchema = z.object({
+  oid: z.string(),
+  messageHeadline: z.string(),
+  messageBody: z.string().default(""),
+  authoredDate: z.string(),
+  committedDate: z.string().optional(),
+  authors: z
+    .array(
+      z.object({
+        login: z.string().optional(),
+        name: z.string().optional(),
+      }),
+    )
+    .default([]),
+})
+
+const GHCommentSchema = z.object({
+  id: z.string().optional(),
+  author: z.object({ login: z.string() }).nullable().optional(),
+  body: z.string().default(""),
+  createdAt: z.string(),
+  updatedAt: z.string().optional(),
+  url: z.string().url().optional(),
+})
+
+const GHActivityReviewSchema = z.object({
+  id: z.string().optional(),
+  author: z.object({ login: z.string() }).nullable().optional(),
+  body: z.string().default(""),
+  state: z.string(),
+  submittedAt: z.string().nullable().optional(),
+  url: z.string().url().optional(),
+})
+
+const GHPullRequestActivitySchema = z.object({
+  commits: z.array(GHCommitSchema).default([]),
+  comments: z.array(GHCommentSchema).default([]),
+  reviews: z.array(GHActivityReviewSchema).default([]),
+})
+
+const GHRestPullRequestFileSchema = z.object({
+  filename: z.string(),
+  previous_filename: z.string().optional(),
+  status: z.string(),
+  additions: z.number().default(0),
+  deletions: z.number().default(0),
+  patch: z.string().nullable().optional(),
+})
+
+const GHRestPullRequestFilesSchema = z.array(GHRestPullRequestFileSchema)
+
 const GHPullRequestDetailSchema = GHPullRequestListItemSchema.extend({
   body: z.string().default(""),
   baseRefName: z.string(),
@@ -94,6 +157,71 @@ export interface PullRequestDetail extends PullRequestSummary {
   checkItems: PullRequestCheck[]
 }
 
+export interface PullRequestFile {
+  index: number
+  path: string
+  additions: number
+  deletions: number
+  status: "added" | "deleted" | "modified" | "renamed" | "copied" | "changed"
+}
+
+export interface PullRequestFilesResult {
+  sourceKey?: string
+  items: PullRequestFile[]
+  total: number
+  truncated: boolean
+}
+
+export type PullRequestActivityItem =
+  | {
+      id: string
+      kind: "commit"
+      author?: string
+      createdAt: number
+      title: string
+      body?: string
+      bodyTruncated?: boolean
+      sha: string
+    }
+  | {
+      id: string
+      kind: "comment"
+      author?: string
+      createdAt: number
+      body: string
+      bodyTruncated?: boolean
+      url?: string
+    }
+  | {
+      id: string
+      kind: "review"
+      author?: string
+      createdAt: number
+      body?: string
+      bodyTruncated?: boolean
+      state: string
+      url?: string
+    }
+
+export interface PullRequestActivityResult {
+  sourceKey?: string
+  items: PullRequestActivityItem[]
+  total: number
+  truncated: boolean
+}
+
+export interface PullRequestFileDiff {
+  sourceKey?: string
+  path: string
+  previousPath?: string
+  status: PullRequestFile["status"]
+  additions: number
+  deletions: number
+  patch?: string
+  truncated: boolean
+  unavailableReason?: string
+}
+
 export interface GitHubRepositoryRef {
   owner: string
   repository: string
@@ -130,6 +258,13 @@ const LIST_CACHE_TTL_MS = 30_000
 const DETAIL_CACHE_TTL_MS = 30_000
 const MAX_CONCURRENT_REPOSITORIES = 4
 const MAX_PULL_REQUESTS_PER_REPOSITORY = 50
+const MAX_FILES_PER_PULL_REQUEST = 300
+const MAX_FILES_RESPONSE_BYTES = 2_000_000
+const MAX_ACTIVITY_ITEMS = 200
+const MAX_ACTIVITY_BODY_CHARS = 50_000
+const MAX_ACTIVITY_RESPONSE_BYTES = 4_000_000
+const MAX_PATCH_BYTES = 500_000
+const MAX_PATCH_LINES = 5_000
 
 const listCache = new Map<
   string,
@@ -139,11 +274,130 @@ const detailCache = new Map<
   string,
   { expiresAt: number; detail: PullRequestDetail }
 >()
+const filesCache = new Map<
+  string,
+  { expiresAt: number; result: PullRequestFilesResult }
+>()
+const activityCache = new Map<
+  string,
+  { expiresAt: number; result: PullRequestActivityResult }
+>()
+const fileDiffCache = new Map<
+  string,
+  { expiresAt: number; result: PullRequestFileDiff }
+>()
 
 function parseDate(value: string | null | undefined): number | undefined {
   if (!value) return undefined
   const timestamp = Date.parse(value)
   return Number.isNaN(timestamp) ? undefined : timestamp
+}
+
+function normalizeFileStatus(value: string): PullRequestFile["status"] {
+  const status = value.toLowerCase()
+  if (status === "added" || status === "deleted" || status === "renamed" || status === "copied" || status === "changed") {
+    return status
+  }
+  return "modified"
+}
+
+export function normalizePullRequestFiles(
+  rawFiles: z.infer<typeof GHPullRequestFileSchema>[],
+  reportedTotal = rawFiles.length,
+): PullRequestFilesResult {
+  const total = Math.max(reportedTotal, rawFiles.length)
+  return {
+    items: rawFiles.slice(0, MAX_FILES_PER_PULL_REQUEST).map((file, index) => ({
+      index,
+      path: file.path,
+      additions: file.additions,
+      deletions: file.deletions,
+      status: normalizeFileStatus(file.changeType),
+    })),
+    total,
+    truncated: total > MAX_FILES_PER_PULL_REQUEST,
+  }
+}
+
+export function normalizePullRequestActivity(
+  raw: z.infer<typeof GHPullRequestActivitySchema>,
+): PullRequestActivityResult {
+  const boundedBody = (body: string) => ({
+    body: body.slice(0, MAX_ACTIVITY_BODY_CHARS),
+    bodyTruncated: body.length > MAX_ACTIVITY_BODY_CHARS || undefined,
+  })
+  const commits: PullRequestActivityItem[] = raw.commits.map((commit) => {
+    const content = boundedBody(commit.messageBody)
+    return {
+      id: `commit-${commit.oid}`,
+      kind: "commit",
+      author: commit.authors[0]?.login || commit.authors[0]?.name,
+      createdAt: parseDate(commit.committedDate || commit.authoredDate) ?? 0,
+      title: commit.messageHeadline,
+      body: content.body || undefined,
+      bodyTruncated: content.bodyTruncated,
+      sha: commit.oid,
+    }
+  })
+  const comments: PullRequestActivityItem[] = raw.comments.map((comment, index) => {
+    const content = boundedBody(comment.body)
+    return {
+      id: comment.id || `comment-${index}-${comment.createdAt}`,
+      kind: "comment",
+      author: comment.author?.login,
+      createdAt: parseDate(comment.createdAt) ?? 0,
+      body: content.body,
+      bodyTruncated: content.bodyTruncated,
+      url: comment.url,
+    }
+  })
+  const reviews: PullRequestActivityItem[] = raw.reviews.map((review, index) => {
+    const content = boundedBody(review.body)
+    return {
+      id: review.id || `review-${index}-${review.submittedAt ?? "unknown"}`,
+      kind: "review",
+      author: review.author?.login,
+      createdAt: parseDate(review.submittedAt) ?? 0,
+      body: content.body || undefined,
+      bodyTruncated: content.bodyTruncated,
+      state: review.state.toLowerCase(),
+      url: review.url,
+    }
+  })
+  const items = [...commits, ...comments, ...reviews].sort(
+    (a, b) => a.createdAt - b.createdAt,
+  )
+
+  return {
+    items: items.slice(-MAX_ACTIVITY_ITEMS),
+    total: items.length,
+    truncated:
+      items.length > MAX_ACTIVITY_ITEMS ||
+      items.some((item) => item.bodyTruncated),
+  }
+}
+
+export function normalizePullRequestFileDiff(
+  file: z.infer<typeof GHRestPullRequestFileSchema>,
+): PullRequestFileDiff {
+  const patchBytes = file.patch ? Buffer.byteLength(file.patch, "utf8") : 0
+  const patchLines = file.patch ? file.patch.split("\n").length : 0
+  const exceedsLimit = patchBytes > MAX_PATCH_BYTES || patchLines > MAX_PATCH_LINES
+
+  return {
+    path: file.filename,
+    previousPath: file.previous_filename,
+    status: normalizeFileStatus(file.status),
+    additions: file.additions,
+    deletions: file.deletions,
+    patch: exceedsLimit ? undefined : file.patch ?? undefined,
+    truncated: exceedsLimit,
+    unavailableReason: exceedsLimit
+      ? "This patch is too large to render safely in the detail panel."
+      : file.patch
+        ? undefined
+        : "GitHub did not provide a text patch for this file. It may be binary or too large.",
+  }
 }
 
 function normalizeState(
@@ -422,11 +676,12 @@ export function aggregatePullRequestResults(
 export async function getPullRequestDetail(
   repository: GitHubRepositoryRef,
   number: number,
+  forceRefresh = false,
 ): Promise<PullRequestDetail> {
   const repositoryFullName = `${repository.owner}/${repository.repository}`
   const cacheKey = `${repositoryFullName.toLowerCase()}#${number}`
   const cached = detailCache.get(cacheKey)
-  if (cached && cached.expiresAt > Date.now()) return cached.detail
+  if (!forceRefresh && cached && cached.expiresAt > Date.now()) return cached.detail
 
   const { stdout } = await execWithShellEnv(
     "gh",
@@ -464,4 +719,123 @@ export async function getPullRequestDetail(
     detail,
   })
   return detail
+}
+
+export async function getPullRequestFiles(
+  repository: GitHubRepositoryRef,
+  number: number,
+  forceRefresh = false,
+): Promise<PullRequestFilesResult> {
+  const repositoryFullName = `${repository.owner}/${repository.repository}`
+  const cacheKey = `${repositoryFullName.toLowerCase()}#${number}`
+  const cached = filesCache.get(cacheKey)
+  if (!forceRefresh && cached && cached.expiresAt > Date.now()) return cached.result
+
+  const { stdout } = await execWithShellEnv(
+    "gh",
+    [
+      "pr",
+      "view",
+      String(number),
+      "--repo",
+      repositoryFullName,
+      "--json",
+      "files,changedFiles",
+    ],
+    { timeout: 20_000, maxBuffer: MAX_FILES_RESPONSE_BYTES },
+  )
+
+  const raw = GHPullRequestFilesSchema.parse(JSON.parse(stdout))
+  const result = {
+    ...normalizePullRequestFiles(raw.files, raw.changedFiles),
+    sourceKey: cacheKey,
+  }
+  filesCache.set(cacheKey, {
+    expiresAt: Date.now() + DETAIL_CACHE_TTL_MS,
+    result,
+  })
+  return result
+}
+
+export async function getPullRequestActivity(
+  repository: GitHubRepositoryRef,
+  number: number,
+  forceRefresh = false,
+): Promise<PullRequestActivityResult> {
+  const repositoryFullName = `${repository.owner}/${repository.repository}`
+  const cacheKey = `${repositoryFullName.toLowerCase()}#${number}`
+  const cached = activityCache.get(cacheKey)
+  if (!forceRefresh && cached && cached.expiresAt > Date.now()) return cached.result
+
+  const { stdout } = await execWithShellEnv(
+    "gh",
+    [
+      "pr",
+      "view",
+      String(number),
+      "--repo",
+      repositoryFullName,
+      "--json",
+      "commits,comments,reviews",
+    ],
+    { timeout: 20_000, maxBuffer: MAX_ACTIVITY_RESPONSE_BYTES },
+  )
+
+  const raw = GHPullRequestActivitySchema.parse(JSON.parse(stdout))
+  const result = {
+    ...normalizePullRequestActivity(raw),
+    sourceKey: cacheKey,
+  }
+  activityCache.set(cacheKey, {
+    expiresAt: Date.now() + DETAIL_CACHE_TTL_MS,
+    result,
+  })
+  return result
+}
+
+export async function getPullRequestFileDiff(
+  repository: GitHubRepositoryRef,
+  number: number,
+  fileIndex: number,
+  expectedPath: string,
+  forceRefresh = false,
+): Promise<PullRequestFileDiff> {
+  const repositoryFullName = `${repository.owner}/${repository.repository}`
+  const cacheKey = `${repositoryFullName.toLowerCase()}#${number}:${fileIndex}:${expectedPath}`
+  const cached = fileDiffCache.get(cacheKey)
+  if (!forceRefresh && cached && cached.expiresAt > Date.now()) return cached.result
+
+  const owner = encodeURIComponent(repository.owner)
+  const repo = encodeURIComponent(repository.repository)
+  const endpoint = `repos/${owner}/${repo}/pulls/${number}/files?per_page=1&page=${fileIndex + 1}`
+  const { stdout } = await execWithShellEnv(
+    "gh",
+    ["api", endpoint],
+    { timeout: 20_000, maxBuffer: MAX_PATCH_BYTES * 4 },
+  )
+
+  const files = GHRestPullRequestFilesSchema.parse(JSON.parse(stdout))
+  const file = files[0]
+  if (!file || file.filename !== expectedPath) {
+    return {
+      sourceKey: cacheKey,
+      path: expectedPath,
+      status: "modified",
+      additions: 0,
+      deletions: 0,
+      truncated: false,
+      unavailableReason: "The selected file changed while the pull request was refreshing.",
+    }
+  }
+
+  const result = {
+    ...normalizePullRequestFileDiff(file),
+    sourceKey: cacheKey,
+  }
+
+  fileDiffCache.set(cacheKey, {
+    expiresAt: Date.now() + DETAIL_CACHE_TTL_MS,
+    result,
+  })
+  return result
 }
