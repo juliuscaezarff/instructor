@@ -27,7 +27,7 @@ import { PatchDiff } from "@pierre/diffs/react"
 import { useCodeTheme } from "../../../lib/hooks/use-code-theme"
 import { getShikiTheme } from "../../../lib/themes/diff-view-highlighter"
 import { useTheme } from "next-themes"
-import { PIERRE_DIFFS_THEME_CSS } from "./agent-diff-view"
+import { PIERRE_DIFFS_THEME_CSS } from "../../../lib/themes/pierre-diffs"
 
 /** Mini bar chart showing additions/deletions ratio as colored bars */
 function DiffMiniBar({ additions, deletions }: { additions: number; deletions: number }) {

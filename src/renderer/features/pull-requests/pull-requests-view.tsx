@@ -64,6 +64,7 @@ import {
   pullRequestStateFilterAtom,
   type PullRequestStateFilter,
 } from "./atoms"
+import { PullRequestDetailTabs } from "./pull-request-detail-tabs"
 
 type AgentProvider = "claude-code" | "codex"
 
@@ -413,6 +414,7 @@ function PullRequestDetailPane({
   onRetry,
   onClose,
   compact,
+  refreshToken,
   workspaces,
   onOpenWorkspace,
 }: {
@@ -423,6 +425,7 @@ function PullRequestDetailPane({
   onRetry: () => void
   onClose: () => void
   compact: boolean
+  refreshToken: number
   workspaces: PullRequestWorkspace[]
   onOpenWorkspace: (workspaceId: string) => void
 }) {
@@ -506,16 +509,12 @@ function PullRequestDetailPane({
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-8 select-text">
-        {isLoading && !detail ? (
-          <div className="mt-6 space-y-3" aria-label="Loading pull request detail">
-            <Skeleton className="h-4 w-1/3" />
-            <Skeleton className="h-3 w-full" />
-            <Skeleton className="h-3 w-11/12" />
-            <Skeleton className="h-3 w-3/4" />
-          </div>
-        ) : detail ? (
-          <>
+      {detail ? (
+        <PullRequestDetailTabs
+          item={item}
+          refreshToken={refreshToken}
+          summary={
+            <>
             <dl className="grid grid-cols-[18px_88px_minmax(0,1fr)] items-center gap-x-2 gap-y-3 border-b border-border/50 pb-5 text-xs">
               <GitBranch className="size-3.5 text-muted-foreground" strokeWidth={1.75} aria-hidden="true" />
               <dt className="text-muted-foreground">Branches</dt>
@@ -638,14 +637,26 @@ function PullRequestDetailPane({
                 <p className="mt-2 text-sm text-muted-foreground">No checks reported.</p>
               )}
             </section>
-          </>
-        ) : hasError ? (
-          <div role="alert" className="mt-6">
-            <p className="text-sm text-destructive">Unable to load pull request details.</p>
-            <Button variant="outline" className="mt-3" onClick={onRetry}>Try again</Button>
-          </div>
-        ) : null}
-      </div>
+            </>
+          }
+        />
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-8 select-text">
+          {isLoading ? (
+            <div className="mt-6 space-y-3" aria-label="Loading pull request detail">
+              <Skeleton className="h-4 w-1/3" />
+              <Skeleton className="h-3 w-full" />
+              <Skeleton className="h-3 w-11/12" />
+              <Skeleton className="h-3 w-3/4" />
+            </div>
+          ) : hasError ? (
+            <div role="alert" className="mt-6">
+              <p className="text-sm text-destructive">Unable to load pull request details.</p>
+              <Button variant="outline" className="mt-3" onClick={onRetry}>Try again</Button>
+            </div>
+          ) : null}
+        </div>
+      )}
     </article>
   )
 }
@@ -762,6 +773,7 @@ export function PullRequestsView() {
       owner: selectedItem?.owner ?? "",
       repository: selectedItem?.repository ?? "",
       number: selectedItem?.number ?? 0,
+      refreshToken,
     },
     {
       enabled: Boolean(selectedItem),
@@ -1059,6 +1071,7 @@ export function PullRequestsView() {
             hasError={detailQuery.isError}
             onRetry={() => detailQuery.refetch()}
             compact
+            refreshToken={refreshToken}
             onClose={closeDetail}
             workspaces={selectedWorkspaces}
             onOpenWorkspace={openWorkspace}
@@ -1087,6 +1100,7 @@ export function PullRequestsView() {
             hasError={detailQuery.isError}
             onRetry={() => detailQuery.refetch()}
             compact={false}
+            refreshToken={refreshToken}
             onClose={closeDetail}
             workspaces={selectedWorkspaces}
             onOpenWorkspace={openWorkspace}

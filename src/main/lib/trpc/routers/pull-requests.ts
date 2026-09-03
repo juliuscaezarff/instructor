@@ -1,7 +1,10 @@
 import { z } from "zod"
 import { getDatabase, projects } from "../../db"
 import {
+  getPullRequestActivity,
   getPullRequestDetail,
+  getPullRequestFileDiff,
+  getPullRequestFiles,
   listPullRequests,
 } from "../../git/github/pull-requests"
 import { publicProcedure, router } from "../index"
@@ -42,12 +45,69 @@ export const pullRequestsRouter = router({
         owner: z.string().trim().min(1),
         repository: z.string().trim().min(1),
         number: z.number().int().positive(),
+        refreshToken: z.number().int().nonnegative().optional(),
       }),
     )
     .query(({ input }) =>
       getPullRequestDetail(
         { owner: input.owner, repository: input.repository },
         input.number,
+        Boolean(input.refreshToken),
+      ),
+    ),
+
+  files: publicProcedure
+    .input(
+      z.object({
+        owner: z.string().trim().min(1),
+        repository: z.string().trim().min(1),
+        number: z.number().int().positive(),
+        refreshToken: z.number().int().nonnegative().optional(),
+      }),
+    )
+    .query(({ input }) =>
+      getPullRequestFiles(
+        { owner: input.owner, repository: input.repository },
+        input.number,
+        Boolean(input.refreshToken),
+      ),
+    ),
+
+  activity: publicProcedure
+    .input(
+      z.object({
+        owner: z.string().trim().min(1),
+        repository: z.string().trim().min(1),
+        number: z.number().int().positive(),
+        refreshToken: z.number().int().nonnegative().optional(),
+      }),
+    )
+    .query(({ input }) =>
+      getPullRequestActivity(
+        { owner: input.owner, repository: input.repository },
+        input.number,
+        Boolean(input.refreshToken),
+      ),
+    ),
+
+  fileDiff: publicProcedure
+    .input(
+      z.object({
+        owner: z.string().trim().min(1),
+        repository: z.string().trim().min(1),
+        number: z.number().int().positive(),
+        fileIndex: z.number().int().min(0).max(299),
+        path: z.string().trim().min(1).max(4096),
+        refreshToken: z.number().int().nonnegative().optional(),
+      }),
+    )
+    .query(({ input }) =>
+      getPullRequestFileDiff(
+        { owner: input.owner, repository: input.repository },
+        input.number,
+        input.fileIndex,
+        input.path,
+        Boolean(input.refreshToken),
       ),
     ),
 })
