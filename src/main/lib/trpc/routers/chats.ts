@@ -274,6 +274,8 @@ export const chatsRouter = router({
       return listedChats.map((chat) => ({
         ...chat,
         agentProvider: agentProviderByChatId.get(chat.id) ?? "claude-code",
+        // Unlike the sidebar fallback, PR badges must represent actual agent history.
+        ...(agentProviderByChatId.has(chat.id) ? { linkedAgentProvider: agentProviderByChatId.get(chat.id) } : {}),
       }))
     }),
 
