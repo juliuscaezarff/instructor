@@ -8,8 +8,20 @@ import {
   listPullRequests,
 } from "../../git/github/pull-requests"
 import { publicProcedure, router } from "../index"
+import { getPullRequestWorkspaceTargets, preparePullRequestWorkspace } from "../../git/github/pull-request-workspaces"
+
+const workspaceIdentity = z.object({
+  owner: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9-]*$/),
+  repository: z.string().regex(/^[a-zA-Z0-9_.-]+$/).refine(value => value !== "." && value !== ".."),
+  number: z.number().int().positive(),
+})
 
 export const pullRequestsRouter = router({
+  workspaceTargets: publicProcedure.input(workspaceIdentity).query(({ input }) => getPullRequestWorkspaceTargets(input)),
+  prepareWorkspace: publicProcedure.input(workspaceIdentity.extend({
+    projectId: z.string().min(1), workspaceId: z.string().optional(),
+    action: z.enum(["open", "analyze", "fix"]),
+  })).mutation(({ input }) => preparePullRequestWorkspace(input)),
   list: publicProcedure
     .input(
       z

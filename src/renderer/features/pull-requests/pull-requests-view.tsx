@@ -1,6 +1,7 @@
 import { keepPreviousData } from "@tanstack/react-query"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { useAtom, useSetAtom } from "jotai"
+import { toast } from "sonner"
 import {
   ArrowLeft,
   ArrowUpRight,
@@ -38,6 +39,7 @@ import {
   agentsSidebarOpenAtom,
   desktopViewAtom,
   selectedAgentChatIdAtom,
+  selectedChatIsRemoteAtom,
   showNewChatFormAtom,
 } from "../agents/atoms"
 import { AgentsHeaderControls } from "../agents/ui/agents-header-controls"
@@ -53,6 +55,7 @@ import { Input } from "../../components/ui/input"
 import { Skeleton } from "../../components/ui/skeleton"
 import { cn } from "../../lib/utils"
 import { trpc } from "../../lib/trpc"
+import { chatSourceModeAtom } from "../../lib/atoms"
 import type {
   PullRequestDetail,
   PullRequestListResult,
@@ -65,6 +68,8 @@ import {
   type PullRequestStateFilter,
 } from "./atoms"
 import { PullRequestDetailTabs } from "./pull-request-detail-tabs"
+import { PullRequestAgentActions } from "./pull-request-agent-actions"
+import { pullRequestKeyFromUrl } from "../../../shared/pull-request-agent-context"
 
 type AgentProvider = "claude-code" | "codex"
 
@@ -73,7 +78,7 @@ interface PullRequestWorkspace {
   name: string
   branch: string | null
   projectName: string
-  provider: AgentProvider
+  provider: AgentProvider | null
 }
 
 const AGENT_PRESENTATION = {
@@ -84,15 +89,16 @@ const AGENT_PRESENTATION = {
   { label: string; icon: ComponentType<{ className?: string }> }
 >
 
-function AgentIcon({ provider }: { provider: AgentProvider }) {
+function AgentIcon({ provider }: { provider: AgentProvider | null }) {
+  if (!provider) return null
   const presentation = AGENT_PRESENTATION[provider]
   const Icon = presentation.icon
   return (
     <span
       className="inline-flex size-4 shrink-0 items-center justify-center text-muted-foreground"
       role="img"
-      aria-label={presentation.label}
-      title={presentation.label}
+      aria-label={`Linked workspace agent: ${presentation.label}`}
+      title={`Linked workspace agent: ${presentation.label}`}
     >
       <Icon className="size-3.5" />
     </span>
@@ -443,7 +449,9 @@ function PullRequestDetailPane({
       <header
         className={cn(
           "grid shrink-0 items-center gap-x-2 px-6 pb-5 pt-4",
-          compact ? "grid-cols-[28px_minmax(0,1fr)]" : "grid-cols-[minmax(0,1fr)_28px]"
+          compact
+            ? "grid-cols-[28px_minmax(0,1fr)_auto]"
+            : "grid-cols-[minmax(0,1fr)_auto_28px]"
         )}
       >
         {compact && (
@@ -468,19 +476,22 @@ function PullRequestDetailPane({
           <span aria-hidden="true">·</span>
           <span className="shrink-0 tabular-nums">#{item.number}</span>
         </div>
+        <div className={cn("row-start-1", compact ? "col-start-3" : "col-start-2")}>
+          <PullRequestAgentActions key={item.key} pr={item} />
+        </div>
         {!compact && (
           <Button
             variant="ghost"
             size="icon"
             onClick={onClose}
-            className="col-start-2 row-start-1 size-7 text-muted-foreground"
+            className="col-start-3 row-start-1 size-7 text-muted-foreground"
             aria-label="Close pull request details"
           >
             <X className="size-4" aria-hidden="true" />
           </Button>
         )}
 
-        <div className={cn("row-start-2 min-w-0", compact ? "col-start-2" : "col-start-1")}>
+        <div className={cn("row-start-2 min-w-0", compact ? "col-span-2 col-start-2" : "col-span-2 col-start-1")}>
           <div className="mt-1 flex min-w-0 items-start gap-1">
             <h2 id="pull-request-title" className="min-w-0 text-lg font-semibold leading-snug text-foreground text-balance">
               {item.title}
@@ -501,7 +512,7 @@ function PullRequestDetailPane({
             {item.author && <span>{item.author}</span>}
             {item.author && <span aria-hidden="true">·</span>}
             <span>{formatRelativeTime(item.updatedAt)}</span>
-            {workspaces.length > 0 && <span aria-hidden="true">·</span>}
+            {workspaces.some(workspace => workspace.provider) && <span aria-hidden="true">·</span>}
             {workspaces.slice(0, 2).map((workspace) => (
               <AgentIcon key={workspace.id} provider={workspace.provider} />
             ))}
@@ -677,7 +688,19 @@ export function PullRequestsView() {
   )
   const setDesktopView = useSetAtom(desktopViewAtom)
   const setSelectedChatId = useSetAtom(selectedAgentChatIdAtom)
+  const setSelectedChatIsRemote = useSetAtom(selectedChatIsRemoteAtom)
+  const setChatSource = useSetAtom(chatSourceModeAtom)
   const setShowNewChatForm = useSetAtom(showNewChatFormAtom)
+  const openLinkedWorkspace = trpc.pullRequests.prepareWorkspace.useMutation({
+    onSuccess: ({ chatId }) => {
+      setSelectedChatIsRemote(false)
+      setChatSource("local")
+      setSelectedChatId(chatId)
+      setShowNewChatForm(false)
+      setDesktopView(null)
+    },
+    onError: error => toast.error(error.message),
+  })
   const rootRef = useRef<HTMLDivElement>(null)
   const listScrollRef = useRef<HTMLDivElement>(null)
   const lastSelectedRowRef = useRef<HTMLButtonElement | null>(null)
@@ -710,14 +733,15 @@ export function PullRequestsView() {
       if (!chat.prNumber) continue
       const project = projectById.get(chat.projectId)
       if (!project?.gitOwner || !project.gitRepo || project.gitProvider !== "github") continue
-      const key = `${project.gitOwner}/${project.gitRepo}#${chat.prNumber}`.toLowerCase()
+      const key = chat.prUrl ? pullRequestKeyFromUrl(chat.prUrl) : `${project.gitOwner}/${project.gitRepo}#${chat.prNumber}`.toLowerCase()
+      if (!key) continue
       const workspaces = result.get(key) ?? []
       workspaces.push({
         id: chat.id,
         name: chat.name || chat.branch || `Workspace #${chat.prNumber}`,
         branch: chat.branch,
         projectName: project.name,
-        provider: chat.agentProvider,
+        provider: chat.linkedAgentProvider ?? null,
       })
       result.set(key, workspaces)
     }
@@ -835,10 +859,11 @@ export function PullRequestsView() {
   }, [])
 
   const openWorkspace = useCallback((workspaceId: string) => {
-    setSelectedChatId(workspaceId)
-    setShowNewChatForm(false)
-    setDesktopView(null)
-  }, [setDesktopView, setSelectedChatId, setShowNewChatForm])
+    const chat = chatsQuery.data?.find(chat => chat.id === workspaceId)
+    if (!selectedItem || !chat || openLinkedWorkspace.isPending) return
+    openLinkedWorkspace.mutate({ owner: selectedItem.owner, repository: selectedItem.repository,
+      number: selectedItem.number, projectId: chat.projectId, workspaceId, action: "open" })
+  }, [selectedItem, chatsQuery.data, openLinkedWorkspace.isPending, openLinkedWorkspace.mutate])
 
   const toggleGroup = useCallback((key: PullRequestGroupKey) => {
     setCollapsedGroups((current) => {
