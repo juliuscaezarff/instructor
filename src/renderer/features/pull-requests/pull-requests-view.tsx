@@ -31,6 +31,7 @@ import {
 } from "react"
 import { CompactMarkdownRenderer } from "../../components/chat-markdown-renderer"
 import { Button } from "../../components/ui/button"
+import { GitHubLogo } from "../../components/ui/canvas-icons"
 import { ClaudeCodeLogoIcon, CodexIcon } from "../../components/ui/icons"
 import { ResizableSidebar } from "../../components/ui/resizable-sidebar"
 import {
@@ -93,6 +94,45 @@ function AgentIcon({ provider }: { provider: AgentProvider }) {
       title={presentation.label}
     >
       <Icon className="size-3.5" />
+    </span>
+  )
+}
+
+function GitHubAvatar({
+  login,
+  className = "size-4",
+}: {
+  login: string
+  className?: string
+}) {
+  const [isLoaded, setIsLoaded] = useState(false)
+  const [hasError, setHasError] = useState(false)
+
+  if (hasError) {
+    return (
+      <GitHubLogo
+        className={cn(className, "shrink-0 text-muted-foreground")}
+        aria-hidden="true"
+      />
+    )
+  }
+
+  return (
+    <span
+      className={cn(className, "relative shrink-0 overflow-hidden rounded-full")}
+      title={login}
+    >
+      {!isLoaded && <span className="absolute inset-0 bg-muted" aria-hidden="true" />}
+      <img
+        src={`https://github.com/${encodeURIComponent(login)}.png?size=64`}
+        alt=""
+        className={cn(
+          "size-full rounded-full object-cover ring-1 ring-inset ring-black/10 transition-opacity duration-150 dark:ring-white/10",
+          isLoaded ? "opacity-100" : "opacity-0",
+        )}
+        onLoad={() => setIsLoaded(true)}
+        onError={() => setHasError(true)}
+      />
     </span>
   )
 }
@@ -397,49 +437,73 @@ function PullRequestDetailPane({
 
   return (
     <article className="flex h-full min-w-0 flex-col bg-background" aria-labelledby="pull-request-title">
-      <header className="flex shrink-0 items-start gap-3 px-6 pb-4 pt-5">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onClose}
-          className="-ms-2 size-7 shrink-0 text-muted-foreground"
-          aria-label={compact ? "Back to pull requests" : "Close pull request details"}
-        >
-          {compact ? (
+      <header
+        className={cn(
+          "grid shrink-0 items-center gap-x-2 px-6 pb-5 pt-4",
+          compact ? "grid-cols-[28px_minmax(0,1fr)]" : "grid-cols-[minmax(0,1fr)_28px]"
+        )}
+      >
+        {compact && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onClose}
+            className="col-start-1 row-start-1 size-7 text-muted-foreground"
+            aria-label="Back to pull requests"
+          >
             <ArrowLeft className="size-4" aria-hidden="true" />
-          ) : (
-            <X className="size-4" aria-hidden="true" />
+          </Button>
+        )}
+        <div
+          className={cn(
+            "row-start-1 flex min-h-7 min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground",
+            compact ? "col-start-2" : "col-start-1"
           )}
-        </Button>
-        <div className="min-w-0 flex-1 pt-0.5">
-          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-            <StateIcon className={cn("size-3.5", state.className)} strokeWidth={1.75} aria-hidden="true" />
-            <span className="truncate">{item.repositoryFullName}</span>
-            <span aria-hidden="true">·</span>
-            <span className="tabular-nums">#{item.number}</span>
+        >
+          <StateIcon className={cn("size-3.5 shrink-0", state.className)} strokeWidth={1.75} aria-hidden="true" />
+          <span className="truncate">{item.repositoryFullName}</span>
+          <span aria-hidden="true">·</span>
+          <span className="shrink-0 tabular-nums">#{item.number}</span>
+        </div>
+        {!compact && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onClose}
+            className="col-start-2 row-start-1 size-7 text-muted-foreground"
+            aria-label="Close pull request details"
+          >
+            <X className="size-4" aria-hidden="true" />
+          </Button>
+        )}
+
+        <div className={cn("row-start-2 min-w-0", compact ? "col-start-2" : "col-start-1")}>
+          <div className="mt-1 flex min-w-0 items-start gap-1">
+            <h2 id="pull-request-title" className="min-w-0 text-lg font-semibold leading-snug text-foreground text-balance">
+              {item.title}
+            </h2>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="mt-0.5 size-7 shrink-0 text-muted-foreground"
+              onClick={() => openExternal.mutate(item.url)}
+              disabled={openExternal.isPending}
+              aria-label="Open pull request on GitHub"
+            >
+              <ArrowUpRight className="size-4" aria-hidden="true" />
+            </Button>
           </div>
-          <h2 id="pull-request-title" className="mt-1 text-lg font-semibold leading-snug text-foreground text-balance">
-            {item.title}
-          </h2>
-          <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
+          <div className="mt-2 flex min-h-4 items-center gap-1.5 text-xs text-muted-foreground">
+            {item.author && <GitHubAvatar key={item.author} login={item.author} />}
+            {item.author && <span>{item.author}</span>}
+            {item.author && <span aria-hidden="true">·</span>}
+            <span>{formatRelativeTime(item.updatedAt)}</span>
+            {workspaces.length > 0 && <span aria-hidden="true">·</span>}
             {workspaces.slice(0, 2).map((workspace) => (
               <AgentIcon key={workspace.id} provider={workspace.provider} />
             ))}
-            {item.author && <span>{item.author}</span>}
-            <span aria-hidden="true">·</span>
-            <span>{formatRelativeTime(item.updatedAt)}</span>
           </div>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-7 shrink-0 text-muted-foreground"
-          onClick={() => openExternal.mutate(item.url)}
-          disabled={openExternal.isPending}
-          aria-label="Open pull request on GitHub"
-        >
-          <ArrowUpRight className="size-4" aria-hidden="true" />
-        </Button>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-8 select-text">
