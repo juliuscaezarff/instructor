@@ -1,6 +1,10 @@
 import { z } from "zod"
 import { execWithShellEnv } from "../shell-env"
 import { GHCheckContextSchema } from "./types"
+import { MAX_COMMENT_BODY_CHARS } from "../../../../shared/pull-request-comment"
+import { MAX_REVIEW_BODY_CHARS } from "../../../../shared/pull-request-review"
+
+export { MAX_COMMENT_BODY_CHARS, MAX_REVIEW_BODY_CHARS }
 
 const GHPullRequestListItemSchema = z.object({
   number: z.number(),
@@ -230,6 +234,7 @@ export interface GitHubRepositoryRef {
 export type GitHubAvailabilityIssue =
   | "gh_not_found"
   | "gh_not_authenticated"
+  | "gh_permission_denied"
   | "unknown"
 
 export interface PullRequestRepositoryFailure {
@@ -503,7 +508,7 @@ export function deduplicateGitHubRepositories(
   return [...unique.values()]
 }
 
-function classifyGitHubError(error: unknown): PullRequestRepositoryFailure["issue"] {
+export function classifyGitHubError(error: unknown): GitHubAvailabilityIssue {
   const message = error instanceof Error ? error.message.toLowerCase() : ""
   const code =
     error instanceof Error && "code" in error
@@ -517,6 +522,16 @@ function classifyGitHubError(error: unknown): PullRequestRepositoryFailure["issu
     message.includes("not recognized")
   ) {
     return "gh_not_found"
+  }
+
+  if (
+    message.includes("must have push access") ||
+    message.includes("must have write access") ||
+    message.includes("not permitted") ||
+    message.includes("resource not accessible by integration") ||
+    message.includes("http 403")
+  ) {
+    return "gh_permission_denied"
   }
 
   if (
@@ -838,4 +853,73 @@ export async function getPullRequestFileDiff(
     result,
   })
   return result
+}
+
+export class PullRequestReviewError extends Error {
+  issue: GitHubAvailabilityIssue
+
+  constructor(issue: GitHubAvailabilityIssue, message: string) {
+    super(message)
+    this.name = "PullRequestReviewError"
+    this.issue = issue
+  }
+}
+
+export async function approvePullRequest(
+  repository: GitHubRepositoryRef,
+  number: number,
+  body?: string,
+): Promise<void> {
+  const repositoryFullName = `${repository.owner}/${repository.repository}`
+  const args = ["pr", "review", String(number), "--repo", repositoryFullName, "--approve"]
+  if (body && body.trim().length > 0) args.push("--body", body)
+
+  try {
+    await execWithShellEnv("gh", args, { timeout: 20_000 })
+  } catch (error) {
+    throw new PullRequestReviewError(classifyGitHubError(error), errorMessage(error))
+  }
+
+  const cacheKey = `${repositoryFullName.toLowerCase()}#${number}`
+  detailCache.delete(cacheKey)
+  activityCache.delete(cacheKey)
+  listCache.delete(repositoryFullName.toLowerCase())
+}
+
+export class PullRequestCommentError extends Error {
+  issue: GitHubAvailabilityIssue
+
+  constructor(issue: GitHubAvailabilityIssue, message: string) {
+    super(message)
+    this.name = "PullRequestCommentError"
+    this.issue = issue
+  }
+}
+
+export interface PullRequestCommentOutcome {
+  url?: string
+}
+
+export async function createPullRequestComment(
+  repository: GitHubRepositoryRef,
+  number: number,
+  body: string,
+): Promise<PullRequestCommentOutcome> {
+  const repositoryFullName = `${repository.owner}/${repository.repository}`
+
+  try {
+    const { stdout } = await execWithShellEnv(
+      "gh",
+      ["pr", "comment", String(number), "--repo", repositoryFullName, "--body", body],
+      { timeout: 20_000 },
+    )
+
+    const cacheKey = `${repositoryFullName.toLowerCase()}#${number}`
+    activityCache.delete(cacheKey)
+
+    const url = stdout.trim().split("\n").pop()?.trim()
+    return { url: url || undefined }
+  } catch (error) {
+    throw new PullRequestCommentError(classifyGitHubError(error), errorMessage(error))
+  }
 }
