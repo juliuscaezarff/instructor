@@ -2,7 +2,8 @@ import { useRef, useState } from "react"
 import { Loader2, XCircle } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "../../components/ui/button"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../../components/ui/dialog"
+import { CanvasDialogBody, CanvasDialogContent, CanvasDialogFooter, CanvasDialogHeader, Dialog, DialogDescription, DialogTitle } from "../../components/ui/dialog"
+import { Label } from "../../components/ui/label"
 import { Textarea } from "../../components/ui/textarea"
 import { cn } from "../../lib/utils"
 import { trpc } from "../../lib/trpc"
@@ -69,8 +70,8 @@ export function PullRequestRequestChangesAction({ item }: { item: PullRequestSum
         <XCircle className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
       </Button>
       <Dialog open={open} onOpenChange={(next) => { if (!mutation.isPending) setOpen(next) }}>
-        <DialogContent
-          className="sm:max-w-md"
+        <CanvasDialogContent
+          className="sm:max-w-[400px]"
           onCloseAutoFocus={(event) => {
             event.preventDefault()
             triggerRef.current?.focus()
@@ -78,23 +79,24 @@ export function PullRequestRequestChangesAction({ item }: { item: PullRequestSum
           onEscapeKeyDown={(event) => { if (mutation.isPending) event.preventDefault() }}
           onPointerDownOutside={(event) => { if (mutation.isPending) event.preventDefault() }}
         >
-          <DialogHeader>
+          <CanvasDialogHeader>
             <DialogTitle>Request changes</DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="truncate">
               {item.repositoryFullName}#{item.number} · {item.title}
             </DialogDescription>
-          </DialogHeader>
+          </CanvasDialogHeader>
           <form
-            className="space-y-3"
+            id="pr-request-changes-form"
             onSubmit={(event) => {
               event.preventDefault()
               void submit()
             }}
           >
-            <div className="space-y-2">
-              <label htmlFor="pr-request-changes-body" className="text-xs font-medium">Justification</label>
+            <CanvasDialogBody className="space-y-2">
+              <Label htmlFor="pr-request-changes-body">Justification</Label>
               <Textarea
                 id="pr-request-changes-body"
+                autoFocus
                 required
                 value={body}
                 disabled={mutation.isPending}
@@ -102,22 +104,38 @@ export function PullRequestRequestChangesAction({ item }: { item: PullRequestSum
                 placeholder="Explain what needs to change"
                 className="min-h-20 text-sm"
               />
-              <span className={cn("block text-[11px] tabular-nums", overLimit ? "text-destructive" : "text-muted-foreground")}>
-                {overLimit
-                  ? `${(body.length - MAX_REVIEW_BODY_CHARS).toLocaleString()} characters over the limit`
-                  : `${body.length.toLocaleString()} / ${MAX_REVIEW_BODY_CHARS.toLocaleString()}`}
-              </span>
-            </div>
-            {errorMessage && <p role="alert" className="text-sm text-destructive">{errorMessage}</p>}
-            <DialogFooter>
-              <Button type="button" variant="ghost" disabled={mutation.isPending} onClick={() => setOpen(false)}>Cancel</Button>
-              <Button type="submit" variant="destructive" disabled={!canSubmit || mutation.isPending}>
+              <div className="flex items-center justify-between gap-3">
+                <span className={cn("text-[11px] tabular-nums", overLimit ? "text-destructive" : "text-muted-foreground")}>
+                  {overLimit
+                    ? `${(body.length - MAX_REVIEW_BODY_CHARS).toLocaleString()} characters over the limit`
+                    : `${body.length.toLocaleString()} / ${MAX_REVIEW_BODY_CHARS.toLocaleString()}`}
+                </span>
+              </div>
+              {errorMessage && <p role="alert" className="text-xs text-destructive">{errorMessage}</p>}
+            </CanvasDialogBody>
+            <CanvasDialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={mutation.isPending}
+                onClick={() => setOpen(false)}
+                className="rounded-md transition-transform duration-150 active:scale-[0.97]"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                form="pr-request-changes-form"
+                variant="destructive"
+                disabled={!canSubmit || mutation.isPending}
+                className="rounded-md transition-transform duration-150 active:scale-[0.97]"
+              >
                 {mutation.isPending && <Loader2 className="mr-2 size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />}
                 Request changes
               </Button>
-            </DialogFooter>
+            </CanvasDialogFooter>
           </form>
-        </DialogContent>
+        </CanvasDialogContent>
       </Dialog>
     </>
   )
