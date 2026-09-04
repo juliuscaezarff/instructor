@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import {
   aggregatePullRequestResults,
+  classifyGitHubError,
   deduplicateGitHubRepositories,
   normalizePullRequestActivity,
   normalizePullRequestFileDiff,
@@ -205,6 +206,21 @@ describe("pull request normalization", () => {
     expect(binary.unavailableReason).toContain("binary")
     expect(oversized.patch).toBeUndefined()
     expect(oversized.truncated).toBe(true)
+  })
+
+  it("classifies gh CLI failures without conflating permission and authentication errors", () => {
+    expect(classifyGitHubError(new Error("HTTP 403: must have push access to repository"))).toBe(
+      "gh_permission_denied",
+    )
+    expect(classifyGitHubError(new Error("GraphQL: Resource not accessible by integration"))).toBe(
+      "gh_permission_denied",
+    )
+    expect(classifyGitHubError(new Error("HTTP 401: Bad credentials, run gh auth login"))).toBe(
+      "gh_not_authenticated",
+    )
+    const notFound = Object.assign(new Error("spawn gh ENOENT"), { code: "ENOENT" })
+    expect(classifyGitHubError(notFound)).toBe("gh_not_found")
+    expect(classifyGitHubError(new Error("connection reset"))).toBe("unknown")
   })
 
   it("bounds oversized activity bodies", () => {
