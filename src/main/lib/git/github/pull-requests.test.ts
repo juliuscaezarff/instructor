@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import {
   aggregatePullRequestResults,
+  buildPullRequestSearchQuery,
   classifyGitHubError,
   deduplicateGitHubRepositories,
   normalizePullRequestActivity,
@@ -114,6 +115,23 @@ describe("pull request repository aggregation", () => {
     expect(SORT_QUALIFIER.created_desc).toBe("sort:created-desc")
     expect(SORT_QUALIFIER.created_asc).toBe("sort:created-asc")
     expect(new Set(Object.values(SORT_QUALIFIER)).size).toBe(3)
+  })
+
+  it("builds a search query combining author, reviewer, check state, and sort", () => {
+    expect(buildPullRequestSearchQuery("maestro/app", { sort: "updated_desc" })).toBe(
+      "repo:maestro/app is:pr sort:updated-desc",
+    )
+
+    expect(
+      buildPullRequestSearchQuery("maestro/app", {
+        sort: "created_asc",
+        author: " octocat ",
+        reviewer: "hubot",
+        checkState: "failure",
+      }),
+    ).toBe(
+      "repo:maestro/app is:pr author:octocat reviewed-by:hubot status:failure sort:created-asc",
+    )
   })
 })
 
