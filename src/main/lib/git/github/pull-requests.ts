@@ -125,7 +125,16 @@ const GHPullRequestDetailSchema = GHPullRequestListItemSchema.extend({
   baseRefName: z.string(),
   headRefName: z.string(),
   mergeable: z.enum(["MERGEABLE", "CONFLICTING", "UNKNOWN"]).optional(),
+  mergeStateStatus: z
+    .enum(["BEHIND", "BLOCKED", "CLEAN", "DIRTY", "DRAFT", "HAS_HOOKS", "UNKNOWN", "UNSTABLE"])
+    .optional(),
   latestReviews: z.array(GHReviewSchema).nullable().optional(),
+})
+
+const GHRepositoryMergeSettingsSchema = z.object({
+  allow_merge_commit: z.boolean().default(false),
+  allow_squash_merge: z.boolean().default(false),
+  allow_rebase_merge: z.boolean().default(false),
 })
 
 export type PullRequestState = "draft" | "open" | "merged" | "closed"
@@ -174,17 +183,36 @@ export interface PullRequestSummary {
   checks: PullRequestCheckSummary
 }
 
+export type PullRequestMergeStateStatus =
+  | "BEHIND"
+  | "BLOCKED"
+  | "CLEAN"
+  | "DIRTY"
+  | "DRAFT"
+  | "HAS_HOOKS"
+  | "UNKNOWN"
+  | "UNSTABLE"
+
 export interface PullRequestDetail extends PullRequestSummary {
   body: string
   baseBranch: string
   headBranch: string
   mergeable?: "MERGEABLE" | "CONFLICTING" | "UNKNOWN"
+  mergeStateStatus?: PullRequestMergeStateStatus
   reviewers: Array<{
     login: string
     state: string
   }>
   checkItems: PullRequestCheck[]
 }
+
+export interface PullRequestMergeOptions {
+  allowMergeCommit: boolean
+  allowSquashMerge: boolean
+  allowRebaseMerge: boolean
+}
+
+export type PullRequestMergeMethod = "merge" | "squash" | "rebase"
 
 export interface PullRequestFile {
   index: number
@@ -816,7 +844,7 @@ export async function getPullRequestDetail(
       "--repo",
       repositoryFullName,
       "--json",
-      "number,title,url,state,isDraft,author,createdAt,updatedAt,mergedAt,additions,deletions,reviewDecision,statusCheckRollup,body,baseRefName,headRefName,mergeable,latestReviews",
+      "number,title,url,state,isDraft,author,createdAt,updatedAt,mergedAt,additions,deletions,reviewDecision,statusCheckRollup,body,baseRefName,headRefName,mergeable,mergeStateStatus,latestReviews",
     ],
     { timeout: 20_000 },
   )
@@ -830,6 +858,7 @@ export async function getPullRequestDetail(
     baseBranch: raw.baseRefName,
     headBranch: raw.headRefName,
     mergeable: raw.mergeable,
+    mergeStateStatus: raw.mergeStateStatus,
     reviewers: (raw.latestReviews ?? []).flatMap((review) =>
       review.author?.login
         ? [{ login: review.author.login, state: review.state.toLowerCase() }]
@@ -1125,6 +1154,49 @@ export async function closePullRequest(
 
   try {
     await execWithShellEnv("gh", args, { timeout: 20_000 })
+  } catch (error) {
+    throw new PullRequestStateError(classifyGitHubError(error), errorMessage(error))
+  }
+
+  const cacheKey = `${repositoryFullName.toLowerCase()}#${number}`
+  detailCache.delete(cacheKey)
+  activityCache.delete(cacheKey)
+  listCache.delete(repositoryFullName.toLowerCase())
+}
+
+export async function getPullRequestMergeOptions(
+  repository: GitHubRepositoryRef,
+): Promise<PullRequestMergeOptions> {
+  const repositoryFullName = `${repository.owner}/${repository.repository}`
+  const { stdout } = await execWithShellEnv(
+    "gh",
+    ["api", `repos/${repositoryFullName}`],
+    { timeout: 20_000 },
+  )
+  const raw = GHRepositoryMergeSettingsSchema.parse(JSON.parse(stdout))
+  return {
+    allowMergeCommit: raw.allow_merge_commit,
+    allowSquashMerge: raw.allow_squash_merge,
+    allowRebaseMerge: raw.allow_rebase_merge,
+  }
+}
+
+const MERGE_METHOD_FLAG: Record<PullRequestMergeMethod, string> = {
+  merge: "--merge",
+  squash: "--squash",
+  rebase: "--rebase",
+}
+
+export async function mergePullRequest(
+  repository: GitHubRepositoryRef,
+  number: number,
+  method: PullRequestMergeMethod,
+): Promise<void> {
+  const repositoryFullName = `${repository.owner}/${repository.repository}`
+  const args = ["pr", "merge", String(number), "--repo", repositoryFullName, MERGE_METHOD_FLAG[method]]
+
+  try {
+    await execWithShellEnv("gh", args, { timeout: 30_000 })
   } catch (error) {
     throw new PullRequestStateError(classifyGitHubError(error), errorMessage(error))
   }
