@@ -35,7 +35,7 @@ The system SHALL list changed files and SHALL load patch content only for the fi
 
 ### Requirement: Read-only pull request activity
 
-The system SHALL present available commits, comments, and reviews as a compact, chronological, read-only activity timeline within the summary context.
+The system SHALL present available commits, comments, reviews, and pull request lifecycle events (closed, reopened, merged) as a compact, chronological, read-only activity timeline within the summary context, identifying the actor for each lifecycle event with an avatar alongside its state icon.
 
 #### Scenario: Load activity with the summary
 - **WHEN** the user selects a pull request
