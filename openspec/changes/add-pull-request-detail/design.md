@@ -18,9 +18,9 @@ O detalhe atual consulta `gh pr view` somente após uma seleção e mostra descr
 
 ### Contextos progressivos
 
-O painel terá `Resumo`, `Arquivos` e `Atividade`. O resumo continua sendo o primeiro contexto. Atividade só é consultada ao ser aberta; a lista de arquivos não inclui patches; o patch é carregado apenas para o arquivo selecionado.
+O painel tem `Resumo` (metadados, descrição, checks e a timeline de Atividade) e `Arquivos`. Resumo é o contexto padrão e único ponto de leitura+escrita de atividade — commits, comentários e reviews são consultados junto com o resumo, seguindo o padrão de densidade do Linear (timeline compacta terminando no composer de comentário, sem exigir trocar de aba para responder). A lista de arquivos não inclui patches; o patch é carregado apenas para o arquivo selecionado.
 
-Essa separação evita que um clique dispare uma resposta grande contendo todos os commits, comentários e diffs.
+Decisão revisada após feedback de uso: a separação inicial de Atividade em aba própria criava fricção para comentar (era preciso trocar de contexto para uma ação de uso frequente). Arquivos continua isolado porque, ao contrário de Atividade, seu custo (patches por arquivo) é proporcional ao tamanho do PR e não à quantidade de eventos, e patches não fazem sentido no fluxo de leitura do resumo.
 
 ### Consultas locais somente leitura
 
@@ -60,4 +60,4 @@ Não há migração de dados. As novas consultas e contextos são incrementais. 
 
 ## Open Questions
 
-- Definir durante a implementação o limite inicial de eventos e tamanho de patch com base em dados reais.
+- Nenhuma questão bloqueante. Limites iniciais definidos em 300 arquivos, 200 itens de atividade, 50.000 caracteres por corpo e patches de até 500 KB ou 5.000 linhas.
