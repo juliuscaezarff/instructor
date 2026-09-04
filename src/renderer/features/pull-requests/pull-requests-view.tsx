@@ -424,6 +424,10 @@ function PullRequestDetailPane({
   onOpenWorkspace: (workspaceId: string) => void
 }) {
   const openExternal = trpc.external.openExternal.useMutation()
+  const currentUserQuery = trpc.pullRequests.currentUser.useQuery(undefined, {
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+  })
 
   if (!item) return null
 
@@ -465,8 +469,8 @@ function PullRequestDetailPane({
           <span className="shrink-0 tabular-nums">#{item.number}</span>
         </div>
         <div className={cn("row-start-1 flex items-center gap-1", compact ? "col-start-3" : "col-start-2")}>
-          <PullRequestRequestChangesAction key={`${item.key}-request-changes`} item={item} />
-          <PullRequestApproveAction key={`${item.key}-approve`} item={item} />
+          <PullRequestRequestChangesAction key={`${item.key}-request-changes`} item={item} currentUserLogin={currentUserQuery.data?.login} />
+          <PullRequestApproveAction key={`${item.key}-approve`} item={item} currentUserLogin={currentUserQuery.data?.login} />
           <PullRequestAgentActions key={item.key} pr={item} />
         </div>
         {!compact && (
