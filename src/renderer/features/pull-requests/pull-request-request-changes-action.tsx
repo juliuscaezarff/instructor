@@ -10,7 +10,13 @@ import { trpc } from "../../lib/trpc"
 import { MAX_REVIEW_BODY_CHARS } from "../../../shared/pull-request-review"
 import type { PullRequestSummary } from "../../../main/lib/git/github/pull-requests"
 
-export function PullRequestRequestChangesAction({ item }: { item: PullRequestSummary }) {
+export function PullRequestRequestChangesAction({
+  item,
+  currentUserLogin,
+}: {
+  item: PullRequestSummary
+  currentUserLogin?: string | null
+}) {
   const [open, setOpen] = useState(false)
   const [body, setBody] = useState("")
   const busyRef = useRef(false)
@@ -32,6 +38,9 @@ export function PullRequestRequestChangesAction({ item }: { item: PullRequestSum
 
   if (item.state !== "open" && item.state !== "draft") return null
 
+  const isOwnPullRequest = Boolean(
+    currentUserLogin && item.author && item.author.toLowerCase() === currentUserLogin.toLowerCase(),
+  )
   const overLimit = body.length > MAX_REVIEW_BODY_CHARS
   const canSubmit = body.trim().length > 0 && !overLimit
   const isForbidden = mutation.error?.data?.code === "FORBIDDEN"
@@ -59,9 +68,10 @@ export function PullRequestRequestChangesAction({ item }: { item: PullRequestSum
         ref={triggerRef}
         variant="ghost"
         size="icon"
-        className="size-7 rounded-md text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
-        aria-label="Request changes on pull request"
-        title="Request changes"
+        className="size-7 rounded-md text-muted-foreground hover:bg-foreground/10 hover:text-foreground disabled:pointer-events-auto"
+        aria-label={isOwnPullRequest ? "Request changes (unavailable for your own pull request)" : "Request changes on pull request"}
+        title={isOwnPullRequest ? "You can't request changes on your own pull request" : "Request changes"}
+        disabled={isOwnPullRequest}
         onClick={() => {
           mutation.reset()
           setOpen(true)
