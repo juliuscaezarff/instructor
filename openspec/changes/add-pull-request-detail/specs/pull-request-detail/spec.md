@@ -2,15 +2,15 @@
 
 ### Requirement: Progressive pull request detail
 
-The system SHALL divide the selected pull request detail into summary, changed-files, and activity contexts without fetching every context when the panel opens.
+The system SHALL divide the selected pull request detail into a combined summary-and-activity context and a changed-files context, and SHALL NOT fetch file patches when the panel opens.
 
 #### Scenario: Open a pull request detail
 - **WHEN** the user selects a pull request
-- **THEN** the summary context is displayed first
-- **AND** activity and file patches are not fetched solely because the detail panel opened
+- **THEN** the combined summary-and-activity context is displayed first
+- **AND** file patches are not fetched solely because the detail panel opened
 
 #### Scenario: Change detail context
-- **WHEN** the user activates another detail context
+- **WHEN** the user activates the changed-files context
 - **THEN** the selected context becomes visible without losing the pull request selection
 - **AND** the context control remains operable by keyboard with a visible focus indicator
 
@@ -35,11 +35,11 @@ The system SHALL list changed files and SHALL load patch content only for the fi
 
 ### Requirement: Read-only pull request activity
 
-The system SHALL present available commits, comments, and reviews as a chronological, read-only activity timeline.
+The system SHALL present available commits, comments, and reviews as a compact, chronological, read-only activity timeline within the summary context.
 
-#### Scenario: Load activity on demand
-- **WHEN** the user opens the activity context for the first time
-- **THEN** the system fetches the supported activity types for the selected pull request
+#### Scenario: Load activity with the summary
+- **WHEN** the user selects a pull request
+- **THEN** the system fetches the supported activity types for the selected pull request together with its summary
 - **AND** identifies each event by type, author, and time when those values are available
 
 #### Scenario: Activity is empty or partially unavailable
