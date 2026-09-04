@@ -26,7 +26,62 @@ const GHPullRequestListItemSchema = z.object({
   statusCheckRollup: z.array(GHCheckContextSchema).nullable().optional(),
 })
 
-const GHPullRequestListSchema = z.array(GHPullRequestListItemSchema)
+const GHSearchCheckContextSchema = z.object({
+  __typename: z.string(),
+  name: z.string().optional(),
+  status: z.string().optional(),
+  conclusion: z.string().nullable().optional(),
+  detailsUrl: z.string().optional(),
+  context: z.string().optional(),
+  state: z.string().optional(),
+  targetUrl: z.string().optional(),
+})
+
+const GHSearchPullRequestNodeSchema = z.object({
+  number: z.number(),
+  title: z.string(),
+  url: z.string().url(),
+  state: z.enum(["OPEN", "CLOSED", "MERGED"]),
+  isDraft: z.boolean().default(false),
+  author: z.object({ login: z.string() }).nullable().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  mergedAt: z.string().nullable().optional(),
+  additions: z.number().default(0),
+  deletions: z.number().default(0),
+  reviewDecision: z
+    .enum(["APPROVED", "CHANGES_REQUESTED", "REVIEW_REQUIRED", ""])
+    .nullable()
+    .optional(),
+  commits: z.object({
+    nodes: z.array(
+      z.object({
+        commit: z.object({
+          statusCheckRollup: z
+            .object({
+              contexts: z.object({
+                nodes: z.array(GHSearchCheckContextSchema),
+              }),
+            })
+            .nullable()
+            .optional(),
+        }),
+      }),
+    ),
+  }),
+})
+
+const GHSearchPullRequestsResponseSchema = z.object({
+  data: z.object({
+    search: z.object({
+      pageInfo: z.object({
+        hasNextPage: z.boolean(),
+        endCursor: z.string().nullable(),
+      }),
+      nodes: z.array(GHSearchPullRequestNodeSchema),
+    }),
+  }),
+})
 
 const GHReviewSchema = z.object({
   author: z.object({ login: z.string() }).nullable().optional(),
@@ -309,21 +364,24 @@ export interface PullRequestListResult {
   items: PullRequestSummary[]
   repositories: string[]
   failures: PullRequestRepositoryFailure[]
+  hasMore: boolean
   fetchedAt: number
 }
 
 export interface PullRequestRepositoryOutcome {
   items: PullRequestSummary[]
+  hasNextPage: boolean
   failure: PullRequestRepositoryFailure | null
 }
 
 type CheckContext = z.infer<typeof GHCheckContextSchema>
 type RawPullRequestSummary = z.infer<typeof GHPullRequestListItemSchema>
+type RawSearchCheckContext = z.infer<typeof GHSearchCheckContextSchema>
 
 const LIST_CACHE_TTL_MS = 30_000
 const DETAIL_CACHE_TTL_MS = 30_000
 const MAX_CONCURRENT_REPOSITORIES = 4
-const MAX_PULL_REQUESTS_PER_REPOSITORY = 50
+const PULL_REQUESTS_PAGE_SIZE = 50
 const MAX_FILES_PER_PULL_REQUEST = 300
 const MAX_FILES_RESPONSE_BYTES = 2_000_000
 const MAX_ACTIVITY_ITEMS = 200
@@ -333,9 +391,46 @@ const MAX_PATCH_BYTES = 500_000
 const MAX_PATCH_LINES = 5_000
 const CURRENT_USER_CACHE_TTL_MS = 5 * 60_000
 
+export type PullRequestSortOption = "updated_desc" | "created_desc" | "created_asc"
+export type PullRequestCheckStateFilter = "success" | "failure" | "pending"
+
+export const SORT_QUALIFIER: Record<PullRequestSortOption, string> = {
+  updated_desc: "sort:updated-desc",
+  created_desc: "sort:created-desc",
+  created_asc: "sort:created-asc",
+}
+
+const CHECK_STATE_QUALIFIER: Record<PullRequestCheckStateFilter, string> = {
+  success: "status:success",
+  failure: "status:failure",
+  pending: "status:pending",
+}
+
+export interface PullRequestSearchFilters {
+  sort: PullRequestSortOption
+  author?: string
+  reviewer?: string
+  checkState?: PullRequestCheckStateFilter
+}
+
+function searchFiltersEqual(a: PullRequestSearchFilters, b: PullRequestSearchFilters): boolean {
+  return (
+    a.sort === b.sort &&
+    a.author === b.author &&
+    a.reviewer === b.reviewer &&
+    a.checkState === b.checkState
+  )
+}
+
 const listCache = new Map<
   string,
-  { expiresAt: number; items: PullRequestSummary[] }
+  {
+    expiresAt: number
+    items: PullRequestSummary[]
+    hasNextPage: boolean
+    endCursor: string | null
+    filters: PullRequestSearchFilters
+  }
 >()
 const detailCache = new Map<
   string,
@@ -714,47 +809,164 @@ async function mapWithConcurrency<T, R>(
   return results
 }
 
+function mapSearchCheckContext(node: RawSearchCheckContext): CheckContext {
+  return {
+    name: node.name,
+    context: node.context,
+    state: node.state as CheckContext["state"],
+    status: node.status,
+    conclusion: (node.conclusion ?? undefined) as CheckContext["conclusion"],
+    detailsUrl: node.detailsUrl,
+    targetUrl: node.targetUrl,
+  }
+}
+
+function searchNodeToRawSummary(
+  node: z.infer<typeof GHSearchPullRequestNodeSchema>,
+): RawPullRequestSummary {
+  const contexts = node.commits.nodes[0]?.commit.statusCheckRollup?.contexts.nodes ?? []
+  return {
+    number: node.number,
+    title: node.title,
+    url: node.url,
+    state: node.state,
+    isDraft: node.isDraft,
+    author: node.author,
+    createdAt: node.createdAt,
+    updatedAt: node.updatedAt,
+    mergedAt: node.mergedAt,
+    additions: node.additions,
+    deletions: node.deletions,
+    reviewDecision: node.reviewDecision,
+    statusCheckRollup: contexts.map(mapSearchCheckContext),
+  }
+}
+
+const PULL_REQUEST_SEARCH_QUERY = `query($q: String!, $cursor: String) {
+  search(query: $q, type: ISSUE, first: ${PULL_REQUESTS_PAGE_SIZE}, after: $cursor) {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      ... on PullRequest {
+        number
+        title
+        url
+        state
+        isDraft
+        author { login }
+        createdAt
+        updatedAt
+        mergedAt
+        additions
+        deletions
+        reviewDecision
+        commits(last: 1) {
+          nodes {
+            commit {
+              statusCheckRollup {
+                contexts(first: 100) {
+                  nodes {
+                    __typename
+                    ... on CheckRun { name status conclusion detailsUrl }
+                    ... on StatusContext { context state targetUrl }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}`
+
+export function buildPullRequestSearchQuery(
+  repositoryFullName: string,
+  filters: PullRequestSearchFilters,
+): string {
+  const qualifiers = [`repo:${repositoryFullName}`, "is:pr"]
+  if (filters.author?.trim()) qualifiers.push(`author:${filters.author.trim()}`)
+  if (filters.reviewer?.trim()) qualifiers.push(`reviewed-by:${filters.reviewer.trim()}`)
+  if (filters.checkState) qualifiers.push(CHECK_STATE_QUALIFIER[filters.checkState])
+  qualifiers.push(SORT_QUALIFIER[filters.sort])
+  return qualifiers.join(" ")
+}
+
+async function fetchPullRequestSearchPage(
+  repository: GitHubRepositoryRef,
+  cursor: string | null,
+  filters: PullRequestSearchFilters,
+): Promise<{ items: PullRequestSummary[]; hasNextPage: boolean; endCursor: string | null }> {
+  const repositoryFullName = `${repository.owner}/${repository.repository}`
+  const args = [
+    "api",
+    "graphql",
+    "-f",
+    `query=${PULL_REQUEST_SEARCH_QUERY}`,
+    "-f",
+    `q=${buildPullRequestSearchQuery(repositoryFullName, filters)}`,
+  ]
+  if (cursor) args.push("-f", `cursor=${cursor}`)
+
+  const { stdout } = await execWithShellEnv("gh", args, { timeout: 20_000, maxBuffer: 2_000_000 })
+  const parsed = GHSearchPullRequestsResponseSchema.parse(JSON.parse(stdout))
+  const items = parsed.data.search.nodes.map((node) =>
+    normalizePullRequestSummary(searchNodeToRawSummary(node), repository),
+  )
+  return {
+    items,
+    hasNextPage: parsed.data.search.pageInfo.hasNextPage,
+    endCursor: parsed.data.search.pageInfo.endCursor,
+  }
+}
+
 async function listRepositoryPullRequests(
   repository: GitHubRepositoryRef,
   forceRefresh: boolean,
-): Promise<PullRequestSummary[]> {
+  loadMore: boolean,
+  filters: PullRequestSearchFilters,
+): Promise<{ items: PullRequestSummary[]; hasNextPage: boolean }> {
   const repositoryFullName = `${repository.owner}/${repository.repository}`
   const cacheKey = repositoryFullName.toLowerCase()
   const cached = listCache.get(cacheKey)
+  const filtersChanged = !cached || !searchFiltersEqual(cached.filters, filters)
 
-  if (!forceRefresh && cached && cached.expiresAt > Date.now()) {
-    return cached.items
+  if (loadMore && cached && !filtersChanged) {
+    if (!cached.hasNextPage) {
+      return { items: cached.items, hasNextPage: false }
+    }
+    const page = await fetchPullRequestSearchPage(repository, cached.endCursor, filters)
+    const seenKeys = new Set(cached.items.map((item) => item.key))
+    const merged = [...cached.items, ...page.items.filter((item) => !seenKeys.has(item.key))]
+    listCache.set(cacheKey, {
+      expiresAt: Date.now() + LIST_CACHE_TTL_MS,
+      items: merged,
+      hasNextPage: page.hasNextPage,
+      endCursor: page.endCursor,
+      filters,
+    })
+    return { items: merged, hasNextPage: page.hasNextPage }
   }
 
-  const { stdout } = await execWithShellEnv(
-    "gh",
-    [
-      "pr",
-      "list",
-      "--repo",
-      repositoryFullName,
-      "--state",
-      "all",
-      "--limit",
-      String(MAX_PULL_REQUESTS_PER_REPOSITORY),
-      "--json",
-      "number,title,url,state,isDraft,author,createdAt,updatedAt,mergedAt,additions,deletions,reviewDecision,statusCheckRollup",
-    ],
-    { timeout: 20_000 },
-  )
+  if (!loadMore && !forceRefresh && !filtersChanged && cached && cached.expiresAt > Date.now()) {
+    return { items: cached.items, hasNextPage: cached.hasNextPage }
+  }
 
-  const parsed = GHPullRequestListSchema.parse(JSON.parse(stdout))
-  const items = parsed.map((item) => normalizePullRequestSummary(item, repository))
+  const page = await fetchPullRequestSearchPage(repository, null, filters)
   listCache.set(cacheKey, {
     expiresAt: Date.now() + LIST_CACHE_TTL_MS,
-    items,
+    items: page.items,
+    hasNextPage: page.hasNextPage,
+    endCursor: page.endCursor,
+    filters,
   })
-  return items
+  return { items: page.items, hasNextPage: page.hasNextPage }
 }
 
 export async function listPullRequests(
   repositories: GitHubRepositoryRef[],
   forceRefresh = false,
+  loadMore = false,
+  filters: PullRequestSearchFilters = { sort: "updated_desc" },
 ): Promise<PullRequestListResult> {
   const uniqueRepositories = deduplicateGitHubRepositories(repositories)
   const repositoryNames = uniqueRepositories.map(
@@ -767,6 +979,7 @@ export async function listPullRequests(
       items: [],
       repositories: [],
       failures: [],
+      hasMore: false,
       fetchedAt: Date.now(),
     }
   }
@@ -780,13 +993,12 @@ export async function listPullRequests(
     async (repository) => {
       const repositoryFullName = `${repository.owner}/${repository.repository}`
       try {
-        return {
-          items: await listRepositoryPullRequests(repository, forceRefresh),
-          failure: null,
-        }
+        const { items, hasNextPage } = await listRepositoryPullRequests(repository, forceRefresh, loadMore, filters)
+        return { items, hasNextPage, failure: null }
       } catch (error) {
         return {
           items: [],
+          hasNextPage: false,
           failure: {
             repositoryFullName,
             issue: classifyGitHubError(error),
@@ -810,6 +1022,7 @@ export function aggregatePullRequestResults(
   const failures = results.flatMap((result) =>
     result.failure ? [result.failure] : [],
   )
+  const hasMore = results.some((result) => result.hasNextPage)
 
   return {
     status:
@@ -821,6 +1034,7 @@ export function aggregatePullRequestResults(
     items,
     repositories,
     failures,
+    hasMore,
     fetchedAt: Date.now(),
   }
 }

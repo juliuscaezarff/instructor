@@ -99,7 +99,7 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(
     "app:show-notification",
-    (event, options: { title: string; body: string }) => {
+    (event, options: { title: string; body: string; data?: Record<string, unknown> }) => {
       try {
         if (!Notification.isSupported()) {
           console.warn("[Main] Notifications not supported on this system")
@@ -127,6 +127,7 @@ function registerIpcHandlers(): void {
           if (win) {
             if (win.isMinimized()) win.restore()
             win.focus()
+            if (options.data) win.webContents.send("app:notification-clicked", options.data)
           }
         })
 

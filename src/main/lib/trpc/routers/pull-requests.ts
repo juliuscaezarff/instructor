@@ -19,6 +19,7 @@ import {
   PullRequestCommentError,
   PullRequestReviewError,
   PullRequestStateError,
+  type PullRequestSearchFilters,
   reopenPullRequest,
   requestChangesOnPullRequest,
   rerunFailedChecks,
@@ -52,6 +53,11 @@ export const pullRequestsRouter = router({
       z
         .object({
           refreshToken: z.number().int().nonnegative().optional(),
+          loadMore: z.boolean().optional(),
+          sort: z.enum(["updated_desc", "created_desc", "created_asc"]).optional(),
+          author: z.string().trim().min(1).max(100).optional(),
+          reviewer: z.string().trim().min(1).max(100).optional(),
+          checkState: z.enum(["success", "failure", "pending"]).optional(),
         })
         .optional(),
     )
@@ -66,6 +72,13 @@ export const pullRequestsRouter = router({
         .from(projects)
         .all()
 
+      const filters: PullRequestSearchFilters = {
+        sort: input?.sort ?? "updated_desc",
+        author: input?.author,
+        reviewer: input?.reviewer,
+        checkState: input?.checkState,
+      }
+
       return listPullRequests(
         configuredProjects.flatMap((project) =>
           project.gitProvider === "github" && project.gitOwner && project.gitRepo
@@ -73,6 +86,8 @@ export const pullRequestsRouter = router({
             : [],
         ),
         Boolean(input?.refreshToken),
+        Boolean(input?.loadMore),
+        filters,
       )
     }),
 

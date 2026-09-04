@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import {
   aggregatePullRequestResults,
+  buildPullRequestSearchQuery,
   classifyGitHubError,
   deduplicateGitHubRepositories,
   normalizePullRequestActivity,
@@ -8,6 +9,7 @@ import {
   normalizePullRequestFiles,
   normalizePullRequestStateEvents,
   normalizePullRequestSummary,
+  SORT_QUALIFIER,
   type PullRequestRepositoryFailure,
   type PullRequestSummary,
 } from "./pull-requests"
@@ -58,9 +60,10 @@ describe("pull request repository aggregation", () => {
       [
         {
           items: [summary("maestro/app#1", 100), summary("maestro/app#2", 200)],
+          hasNextPage: false,
           failure: null,
         },
-        { items: [], failure },
+        { items: [], hasNextPage: false, failure },
       ],
     )
 
@@ -80,11 +83,55 @@ describe("pull request repository aggregation", () => {
     }
     const result = aggregatePullRequestResults(
       ["maestro/app"],
-      [{ items: [], failure }],
+      [{ items: [], hasNextPage: false, failure }],
     )
 
     expect(result.status).toBe("unavailable")
     expect(result.items).toHaveLength(0)
+  })
+
+  it("reports hasMore when any repository still has a next page", () => {
+    const exhausted = aggregatePullRequestResults(
+      ["maestro/app", "maestro/web"],
+      [
+        { items: [summary("maestro/app#1", 100)], hasNextPage: false, failure: null },
+        { items: [summary("maestro/web#1", 50)], hasNextPage: false, failure: null },
+      ],
+    )
+    expect(exhausted.hasMore).toBe(false)
+
+    const withMore = aggregatePullRequestResults(
+      ["maestro/app", "maestro/web"],
+      [
+        { items: [summary("maestro/app#1", 100)], hasNextPage: true, failure: null },
+        { items: [summary("maestro/web#1", 50)], hasNextPage: false, failure: null },
+      ],
+    )
+    expect(withMore.hasMore).toBe(true)
+  })
+
+  it("maps each sort option to a distinct GitHub search qualifier", () => {
+    expect(SORT_QUALIFIER.updated_desc).toBe("sort:updated-desc")
+    expect(SORT_QUALIFIER.created_desc).toBe("sort:created-desc")
+    expect(SORT_QUALIFIER.created_asc).toBe("sort:created-asc")
+    expect(new Set(Object.values(SORT_QUALIFIER)).size).toBe(3)
+  })
+
+  it("builds a search query combining author, reviewer, check state, and sort", () => {
+    expect(buildPullRequestSearchQuery("maestro/app", { sort: "updated_desc" })).toBe(
+      "repo:maestro/app is:pr sort:updated-desc",
+    )
+
+    expect(
+      buildPullRequestSearchQuery("maestro/app", {
+        sort: "created_asc",
+        author: " octocat ",
+        reviewer: "hubot",
+        checkState: "failure",
+      }),
+    ).toBe(
+      "repo:maestro/app is:pr author:octocat reviewed-by:hubot status:failure sort:created-asc",
+    )
   })
 })
 
