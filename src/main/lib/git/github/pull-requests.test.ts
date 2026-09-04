@@ -41,25 +41,25 @@ describe("pull request repository aggregation", () => {
       deduplicateGitHubRepositories([
         { owner: "OpenAI", repository: "Codex.git" },
         { owner: "openai", repository: "codex" },
-        { owner: " maestro ", repository: " app " },
+        { owner: " instructor ", repository: " app " },
       ]),
     ).toEqual([
       { owner: "OpenAI", repository: "Codex" },
-      { owner: "maestro", repository: "app" },
+      { owner: "instructor", repository: "app" },
     ])
   })
 
   it("sorts successful results and reports partial failures", () => {
     const failure: PullRequestRepositoryFailure = {
-      repositoryFullName: "maestro/web",
+      repositoryFullName: "instructor/web",
       issue: "unknown",
       message: "Network unavailable",
     }
     const result = aggregatePullRequestResults(
-      ["maestro/app", "maestro/web"],
+      ["instructor/app", "instructor/web"],
       [
         {
-          items: [summary("maestro/app#1", 100), summary("maestro/app#2", 200)],
+          items: [summary("instructor/app#1", 100), summary("instructor/app#2", 200)],
           hasNextPage: false,
           failure: null,
         },
@@ -69,20 +69,20 @@ describe("pull request repository aggregation", () => {
 
     expect(result.status).toBe("partial")
     expect(result.items.map((item) => item.key)).toEqual([
-      "maestro/app#2",
-      "maestro/app#1",
+      "instructor/app#2",
+      "instructor/app#1",
     ])
     expect(result.failures).toEqual([failure])
   })
 
   it("reports unavailable when every repository fails", () => {
     const failure: PullRequestRepositoryFailure = {
-      repositoryFullName: "maestro/app",
+      repositoryFullName: "instructor/app",
       issue: "gh_not_authenticated",
       message: "Run gh auth login",
     }
     const result = aggregatePullRequestResults(
-      ["maestro/app"],
+      ["instructor/app"],
       [{ items: [], hasNextPage: false, failure }],
     )
 
@@ -92,19 +92,19 @@ describe("pull request repository aggregation", () => {
 
   it("reports hasMore when any repository still has a next page", () => {
     const exhausted = aggregatePullRequestResults(
-      ["maestro/app", "maestro/web"],
+      ["instructor/app", "instructor/web"],
       [
-        { items: [summary("maestro/app#1", 100)], hasNextPage: false, failure: null },
-        { items: [summary("maestro/web#1", 50)], hasNextPage: false, failure: null },
+        { items: [summary("instructor/app#1", 100)], hasNextPage: false, failure: null },
+        { items: [summary("instructor/web#1", 50)], hasNextPage: false, failure: null },
       ],
     )
     expect(exhausted.hasMore).toBe(false)
 
     const withMore = aggregatePullRequestResults(
-      ["maestro/app", "maestro/web"],
+      ["instructor/app", "instructor/web"],
       [
-        { items: [summary("maestro/app#1", 100)], hasNextPage: true, failure: null },
-        { items: [summary("maestro/web#1", 50)], hasNextPage: false, failure: null },
+        { items: [summary("instructor/app#1", 100)], hasNextPage: true, failure: null },
+        { items: [summary("instructor/web#1", 50)], hasNextPage: false, failure: null },
       ],
     )
     expect(withMore.hasMore).toBe(true)
@@ -118,19 +118,19 @@ describe("pull request repository aggregation", () => {
   })
 
   it("builds a search query combining author, reviewer, check state, and sort", () => {
-    expect(buildPullRequestSearchQuery("maestro/app", { sort: "updated_desc" })).toBe(
-      "repo:maestro/app is:pr sort:updated-desc",
+    expect(buildPullRequestSearchQuery("instructor/app", { sort: "updated_desc" })).toBe(
+      "repo:instructor/app is:pr sort:updated-desc",
     )
 
     expect(
-      buildPullRequestSearchQuery("maestro/app", {
+      buildPullRequestSearchQuery("instructor/app", {
         sort: "created_asc",
         author: " octocat ",
         reviewer: "hubot",
         checkState: "failure",
       }),
     ).toBe(
-      "repo:maestro/app is:pr author:octocat reviewed-by:hubot status:failure sort:created-asc",
+      "repo:instructor/app is:pr author:octocat reviewed-by:hubot status:failure sort:created-asc",
     )
   })
 })
@@ -141,7 +141,7 @@ describe("pull request normalization", () => {
       {
         number: 42,
         title: "Keep the page compact",
-        url: "https://github.com/maestro/app/pull/42",
+        url: "https://github.com/instructor/app/pull/42",
         state: "OPEN",
         isDraft: true,
         author: null,
@@ -157,10 +157,10 @@ describe("pull request normalization", () => {
           { name: "tests", status: "IN_PROGRESS", conclusion: "" },
         ],
       },
-      { owner: "maestro", repository: "app" },
+      { owner: "instructor", repository: "app" },
     )
 
-    expect(result.key).toBe("maestro/app#42")
+    expect(result.key).toBe("instructor/app#42")
     expect(result.state).toBe("draft")
     expect(result.reviewState).toBe("changes_requested")
     expect(result.author).toBeUndefined()
