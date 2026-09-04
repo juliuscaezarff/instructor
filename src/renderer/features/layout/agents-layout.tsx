@@ -45,6 +45,7 @@ import { useAgentSubChatStore } from "../agents/stores/sub-chat-store";
 import { QueueProcessor } from "../agents/components/queue-processor";
 import { SettingsSidebar } from "../settings/settings-sidebar";
 import { GlobalCommandMenu } from "../agents/components/global-command-menu";
+import { usePullRequestNotifications } from "../pull-requests/hooks/use-pull-request-notifications";
 
 // ============================================================================
 // Constants
@@ -100,6 +101,9 @@ export function AgentsLayout() {
 
   // Check for updates on mount and periodically
   useUpdateChecker();
+
+  // Poll for relevant pull request events in the background, regardless of active tab
+  usePullRequestNotifications();
 
   const [sidebarOpen, setSidebarOpen] = useAtom(agentsSidebarOpenAtom);
   const [sidebarWidth, setSidebarWidth] = useAtom(agentsSidebarWidthAtom);
