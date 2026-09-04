@@ -4,13 +4,13 @@ import type { PullRequestSummary } from "../../../main/lib/git/github/pull-reque
 
 function summary(overrides: Partial<PullRequestSummary> = {}): PullRequestSummary {
   return {
-    key: "maestro/app#1",
-    owner: "maestro",
+    key: "instructor/app#1",
+    owner: "instructor",
     repository: "app",
-    repositoryFullName: "maestro/app",
+    repositoryFullName: "instructor/app",
     number: 1,
     title: "Do the thing",
-    url: "https://github.com/maestro/app/pull/1",
+    url: "https://github.com/instructor/app/pull/1",
     author: "octocat",
     state: "open",
     createdAt: 0,
