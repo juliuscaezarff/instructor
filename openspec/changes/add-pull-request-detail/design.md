@@ -45,7 +45,9 @@ Uma visualização side-by-side fica fora do primeiro corte porque reduz a legib
 
 ### Atividade
 
-A timeline combina commits, comentários e reviews em ordem cronológica, mantendo autor, avatar, horário, tipo e conteúdo. Eventos usam ícone e texto; cor não será o único indicador. Conteúdo Markdown seguirá o renderer seguro já usado no resumo.
+A timeline combina commits, comentários, reviews e eventos de ciclo de vida do PR (fechado, reaberto, mesclado) em ordem cronológica, mantendo autor, avatar, horário, tipo e conteúdo. Eventos usam ícone e texto; cor não será o único indicador. Conteúdo Markdown seguirá o renderer seguro já usado no resumo.
+
+**Atualização (após implementar Reabrir/Fechar):** `gh pr view --json commits,comments,reviews` não expõe eventos de fechar/reabrir/mesclar — só estão disponíveis via `timelineItems` do GraphQL (`gh api graphql`, primeira consulta GraphQL do projeto). A consulta roda em paralelo à consulta de atividade existente, tolera falha isolada (retorna lista vazia em vez de quebrar a timeline inteira) e é somente leitura, como as demais. Eventos de ciclo de vida mostram o ícone colorido do estado (mesma paleta de `STATE_COPY`: vermelho fechado, verde reaberto, roxo mesclado) na trilha **e** o avatar de quem executou a ação, inline junto ao nome — diferente de commit/review, que usam só um indicador.
 
 ## Risks / Trade-offs
 
