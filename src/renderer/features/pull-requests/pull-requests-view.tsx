@@ -69,6 +69,8 @@ import {
 } from "./atoms"
 import { PullRequestDetailTabs } from "./pull-request-detail-tabs"
 import { PullRequestAgentActions } from "./pull-request-agent-actions"
+import { PullRequestApproveAction } from "./pull-request-approve-action"
+import { formatRelativeTime } from "./format-relative-time"
 import { pullRequestKeyFromUrl } from "../../../shared/pull-request-agent-context"
 
 type AgentProvider = "claude-code" | "codex"
@@ -241,21 +243,6 @@ function getGroupKey(item: PullRequestSummary): PullRequestGroupKey {
     return item.state
   }
   return item.reviewState === "none" ? "open" : item.reviewState
-}
-
-function formatRelativeTime(timestamp: number): string {
-  if (!timestamp) return "Unknown age"
-  const elapsed = Math.max(0, Date.now() - timestamp)
-  const minutes = Math.floor(elapsed / 60_000)
-  if (minutes < 1) return "now"
-  if (minutes < 60) return `${minutes}m`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h`
-  const days = Math.floor(hours / 24)
-  if (days < 30) return `${days}d`
-  const months = Math.floor(days / 30)
-  if (months < 12) return `${months}mo`
-  return `${Math.floor(months / 12)}y`
 }
 
 function ChecksSummary({ checks }: { checks: PullRequestSummary["checks"] }) {
@@ -476,7 +463,8 @@ function PullRequestDetailPane({
           <span aria-hidden="true">·</span>
           <span className="shrink-0 tabular-nums">#{item.number}</span>
         </div>
-        <div className={cn("row-start-1", compact ? "col-start-3" : "col-start-2")}>
+        <div className={cn("row-start-1 flex items-center gap-1", compact ? "col-start-3" : "col-start-2")}>
+          <PullRequestApproveAction key={`${item.key}-approve`} item={item} />
           <PullRequestAgentActions key={item.key} pr={item} />
         </div>
         {!compact && (
