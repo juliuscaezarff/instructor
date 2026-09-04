@@ -7,12 +7,12 @@ import {
   ArrowUpRight,
   CheckCircle2,
   ChevronDown,
-  CircleDot,
   Clock3,
   GitBranch,
   GitMerge,
   GitPullRequest,
   GitPullRequestClosed,
+  GitPullRequestDraft,
   RefreshCw,
   Search,
   SlidersHorizontal,
@@ -159,8 +159,8 @@ const STATE_FILTERS: Array<{ value: PullRequestStateFilter; label: string }> = [
 ]
 
 const STATE_COPY = {
-  draft: { label: "Draft", icon: GitPullRequest, className: "text-muted-foreground" },
-  open: { label: "Open", icon: CircleDot, className: "text-emerald-500" },
+  draft: { label: "Draft", icon: GitPullRequestDraft, className: "text-muted-foreground" },
+  open: { label: "Open", icon: GitPullRequest, className: "text-emerald-500" },
   merged: { label: "Merged", icon: GitMerge, className: "text-violet-500" },
   closed: { label: "Closed", icon: GitPullRequestClosed, className: "text-destructive" },
 } as const
@@ -213,12 +213,12 @@ const GROUP_COPY: Record<
   },
   open: {
     label: "Open",
-    icon: CircleDot,
+    icon: GitPullRequest,
     className: "text-muted-foreground",
   },
   draft: {
     label: "Draft",
-    icon: GitPullRequest,
+    icon: GitPullRequestDraft,
     className: "text-muted-foreground",
   },
   merged: {
