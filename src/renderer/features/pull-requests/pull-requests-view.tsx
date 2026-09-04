@@ -4,6 +4,7 @@ import { useAtom, useSetAtom } from "jotai"
 import { toast } from "sonner"
 import {
   ArrowLeft,
+  ArrowUpDown,
   ArrowUpRight,
   CheckCircle2,
   ChevronDown,
@@ -49,6 +50,8 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../../components/ui/dropdown-menu"
@@ -65,7 +68,9 @@ import type {
 import {
   pullRequestDetailWidthAtom,
   pullRequestRepositoryFilterAtom,
+  pullRequestSortAtom,
   pullRequestStateFilterAtom,
+  type PullRequestSortOption,
   type PullRequestStateFilter,
 } from "./atoms"
 import { PullRequestDetailTabs } from "./pull-request-detail-tabs"
@@ -157,6 +162,12 @@ const STATE_FILTERS: Array<{ value: PullRequestStateFilter; label: string }> = [
   { value: "open", label: "Open" },
   { value: "merged", label: "Merged" },
   { value: "closed", label: "Closed" },
+]
+
+const SORT_OPTIONS: Array<{ value: PullRequestSortOption; label: string }> = [
+  { value: "updated_desc", label: "Recently updated" },
+  { value: "created_desc", label: "Newest" },
+  { value: "created_asc", label: "Oldest" },
 ]
 
 const STATE_COPY = {
@@ -681,6 +692,7 @@ export function PullRequestsView() {
   const [repositoryFilter, setRepositoryFilter] = useAtom(
     pullRequestRepositoryFilterAtom,
   )
+  const [sort, setSort] = useAtom(pullRequestSortAtom)
   const [search, setSearch] = useState("")
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [refreshToken, setRefreshToken] = useState(0)
@@ -709,7 +721,7 @@ export function PullRequestsView() {
   const lastSelectedRowRef = useRef<HTMLButtonElement | null>(null)
 
   const listQuery = trpc.pullRequests.list.useQuery(
-    { refreshToken },
+    { refreshToken, sort },
     {
       staleTime: 30_000,
       placeholderData: keepPreviousData,
@@ -726,8 +738,8 @@ export function PullRequestsView() {
     setIsLoadingMore(true)
     setLoadMoreError(null)
     try {
-      const result = await utils.pullRequests.list.fetch({ refreshToken, loadMore: true })
-      utils.pullRequests.list.setData({ refreshToken }, result)
+      const result = await utils.pullRequests.list.fetch({ refreshToken, sort, loadMore: true })
+      utils.pullRequests.list.setData({ refreshToken, sort }, result)
     } catch (error) {
       setLoadMoreError(error instanceof Error ? error.message : "Unable to load more pull requests.")
     } finally {
@@ -737,7 +749,7 @@ export function PullRequestsView() {
 
   useEffect(() => {
     setLoadMoreError(null)
-  }, [refreshToken])
+  }, [refreshToken, sort])
   const projectsQuery = trpc.projects.list.useQuery(undefined, {
     staleTime: 60_000,
     refetchOnWindowFocus: false,
@@ -969,6 +981,31 @@ export function PullRequestsView() {
                 className="h-8 rounded-lg border-border/70 bg-foreground/[0.035] ps-8 text-xs shadow-none"
               />
             </div>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="size-8 rounded-lg border-border/70 bg-foreground/[0.035] text-muted-foreground shadow-none"
+                  aria-label={`Sort by, ${SORT_OPTIONS.find((option) => option.value === sort)?.label}`}
+                  title={SORT_OPTIONS.find((option) => option.value === sort)?.label}
+                >
+                  <ArrowUpDown className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-48">
+                <DropdownMenuLabel>Sort by</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuRadioGroup value={sort} onValueChange={(value) => setSort(value as PullRequestSortOption)}>
+                  {SORT_OPTIONS.map((option) => (
+                    <DropdownMenuRadioItem key={option.value} value={option.value}>
+                      {option.label}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
