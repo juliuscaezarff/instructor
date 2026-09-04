@@ -70,6 +70,7 @@ import {
   pullRequestAuthorFilterAtom,
   pullRequestCheckStateFilterAtom,
   pullRequestDetailWidthAtom,
+  pullRequestPendingSelectionAtom,
   pullRequestRepositoryFilterAtom,
   pullRequestReviewerFilterAtom,
   pullRequestSortAtom,
@@ -719,6 +720,7 @@ export function PullRequestsView() {
   const [reviewerFilter, setReviewerFilter] = useAtom(pullRequestReviewerFilterAtom)
   const [checkStateFilter, setCheckStateFilter] = useAtom(pullRequestCheckStateFilterAtom)
   const [agentFilter, setAgentFilter] = useAtom(pullRequestAgentFilterAtom)
+  const [pendingSelection, setPendingSelection] = useAtom(pullRequestPendingSelectionAtom)
   const [search, setSearch] = useState("")
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [refreshToken, setRefreshToken] = useState(0)
@@ -966,6 +968,33 @@ export function PullRequestsView() {
     setCheckStateFilter(null)
     setAgentFilter(null)
   }, [setRepositoryFilter, setStateFilter, setAuthorFilter, setReviewerFilter, setCheckStateFilter, setAgentFilter])
+
+  const pendingSelectionAttemptedRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!pendingSelection) return
+    const targetKey = `${pendingSelection.owner}/${pendingSelection.repository}#${pendingSelection.number}`
+    const match = data?.items.find((item) => item.key === targetKey)
+    if (match) {
+      clearFilters()
+      setSelectedKey(match.key)
+      setShowCompactDetail(true)
+      setPendingSelection(null)
+      pendingSelectionAttemptedRef.current = null
+      return
+    }
+    if (pendingSelectionAttemptedRef.current !== targetKey) {
+      pendingSelectionAttemptedRef.current = targetKey
+      clearFilters()
+      setRefreshToken(Date.now())
+      return
+    }
+    if (!listQuery.isFetching) {
+      // Not found even after a fresh unfiltered fetch — give up quietly.
+      setPendingSelection(null)
+      pendingSelectionAttemptedRef.current = null
+    }
+  }, [pendingSelection, data?.items, listQuery.isFetching, clearFilters, setPendingSelection])
 
   const primaryIssue = data?.failures[0]?.issue
   const unavailableTitle =
