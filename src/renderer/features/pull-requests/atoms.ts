@@ -1,3 +1,4 @@
+import { atom } from "jotai"
 import { atomWithStorage } from "jotai/utils"
 
 export type PullRequestStateFilter = "all" | "open" | "merged" | "closed"
@@ -46,3 +47,11 @@ export const pullRequestAgentFilterAtom = atomWithStorage<PullRequestAgentFilter
   "pull-requests:agent-filter",
   null,
 )
+
+export interface PullRequestPendingSelection {
+  owner: string
+  repository: string
+  number: number
+}
+
+export const pullRequestPendingSelectionAtom = atom<PullRequestPendingSelection | null>(null)
