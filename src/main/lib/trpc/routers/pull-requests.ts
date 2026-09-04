@@ -19,6 +19,7 @@ import {
   PullRequestCommentError,
   PullRequestReviewError,
   PullRequestStateError,
+  type PullRequestSortOption,
   reopenPullRequest,
   requestChangesOnPullRequest,
   rerunFailedChecks,
@@ -53,6 +54,7 @@ export const pullRequestsRouter = router({
         .object({
           refreshToken: z.number().int().nonnegative().optional(),
           loadMore: z.boolean().optional(),
+          sort: z.enum(["updated_desc", "created_desc", "created_asc"]).optional(),
         })
         .optional(),
     )
@@ -75,6 +77,7 @@ export const pullRequestsRouter = router({
         ),
         Boolean(input?.refreshToken),
         Boolean(input?.loadMore),
+        (input?.sort ?? "updated_desc") satisfies PullRequestSortOption,
       )
     }),
 
