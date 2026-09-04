@@ -26,6 +26,7 @@ export interface NotificationOptions {
   body: string
   silent?: boolean
   priority?: NotificationPriority
+  data?: Record<string, unknown>
 }
 
 export function useDesktopNotifications() {
@@ -47,7 +48,7 @@ export function useDesktopNotifications() {
     }
   }, [])
 
-  const showNotification = useCallback((title: string, body: string, options?: { silent?: boolean; priority?: NotificationPriority }) => {
+  const showNotification = useCallback((title: string, body: string, options?: { silent?: boolean; priority?: NotificationPriority; data?: Record<string, unknown> }) => {
     // Check if notifications are enabled
     if (!notificationsEnabled) {
       return
@@ -73,7 +74,7 @@ export function useDesktopNotifications() {
 
       // Only queue if higher or equal priority than pending
       if (currentPriority >= pendingPriority) {
-        pendingNotification.current = { title, body, silent: options?.silent, priority: options?.priority }
+        pendingNotification.current = { title, body, silent: options?.silent, priority: options?.priority, data: options?.data }
       }
 
       // set up a timer to show the pending notification after throttle period
@@ -85,7 +86,7 @@ export function useDesktopNotifications() {
             pendingNotification.current = null
             // Directly send notification without recursive call to avoid re-throttling
             lastNotificationTime.current = Date.now()
-            window.desktopApi?.showNotification({ title: pending.title, body: pending.body })
+            window.desktopApi?.showNotification({ title: pending.title, body: pending.body, data: pending.data })
           }
         }, NOTIFICATION_THROTTLE_MS - timeSinceLastNotification)
       }
@@ -95,7 +96,7 @@ export function useDesktopNotifications() {
     lastNotificationTime.current = now
 
     // use the IPC bridge to show native notification
-    window.desktopApi?.showNotification({ title, body })
+    window.desktopApi?.showNotification({ title, body, data: options?.data })
   }, [notificationsEnabled])
 
   const notifyAgentComplete = useCallback((chatName: string) => {
