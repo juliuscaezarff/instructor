@@ -988,6 +988,37 @@ export async function rerunFailedChecks(
   }
 }
 
+export class PullRequestStateError extends Error {
+  issue: GitHubAvailabilityIssue
+
+  constructor(issue: GitHubAvailabilityIssue, message: string) {
+    super(message)
+    this.name = "PullRequestStateError"
+    this.issue = issue
+  }
+}
+
+export async function reopenPullRequest(
+  repository: GitHubRepositoryRef,
+  number: number,
+  comment?: string,
+): Promise<void> {
+  const repositoryFullName = `${repository.owner}/${repository.repository}`
+  const args = ["pr", "reopen", String(number), "--repo", repositoryFullName]
+  if (comment && comment.trim().length > 0) args.push("--comment", comment)
+
+  try {
+    await execWithShellEnv("gh", args, { timeout: 20_000 })
+  } catch (error) {
+    throw new PullRequestStateError(classifyGitHubError(error), errorMessage(error))
+  }
+
+  const cacheKey = `${repositoryFullName.toLowerCase()}#${number}`
+  detailCache.delete(cacheKey)
+  activityCache.delete(cacheKey)
+  listCache.delete(repositoryFullName.toLowerCase())
+}
+
 export class PullRequestCommentError extends Error {
   issue: GitHubAvailabilityIssue
 
