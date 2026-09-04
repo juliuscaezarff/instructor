@@ -52,6 +52,7 @@ export const pullRequestsRouter = router({
       z
         .object({
           refreshToken: z.number().int().nonnegative().optional(),
+          loadMore: z.boolean().optional(),
         })
         .optional(),
     )
@@ -73,6 +74,7 @@ export const pullRequestsRouter = router({
             : [],
         ),
         Boolean(input?.refreshToken),
+        Boolean(input?.loadMore),
       )
     }),
 
