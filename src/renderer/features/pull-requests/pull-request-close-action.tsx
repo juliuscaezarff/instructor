@@ -1,5 +1,5 @@
 import { useRef, useState } from "react"
-import { CircleOff, Loader2 } from "lucide-react"
+import { GitPullRequestClosed, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "../../components/ui/button"
 import { CanvasDialogBody, CanvasDialogContent, CanvasDialogFooter, CanvasDialogHeader, Dialog, DialogDescription, DialogTitle } from "../../components/ui/dialog"
@@ -66,7 +66,7 @@ export function PullRequestCloseAction({ item }: { item: PullRequestSummary }) {
           setOpen(true)
         }}
       >
-        <CircleOff className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+        <GitPullRequestClosed className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
       </Button>
       <Dialog open={open} onOpenChange={(next) => { if (!mutation.isPending) setOpen(next) }}>
         <CanvasDialogContent
