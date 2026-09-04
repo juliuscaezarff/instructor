@@ -70,6 +70,7 @@ import {
 import { PullRequestDetailTabs } from "./pull-request-detail-tabs"
 import { PullRequestAgentActions } from "./pull-request-agent-actions"
 import { PullRequestApproveAction } from "./pull-request-approve-action"
+import { PullRequestRequestChangesAction } from "./pull-request-request-changes-action"
 import { formatRelativeTime } from "./format-relative-time"
 import { pullRequestKeyFromUrl } from "../../../shared/pull-request-agent-context"
 
@@ -464,6 +465,7 @@ function PullRequestDetailPane({
           <span className="shrink-0 tabular-nums">#{item.number}</span>
         </div>
         <div className={cn("row-start-1 flex items-center gap-1", compact ? "col-start-3" : "col-start-2")}>
+          <PullRequestRequestChangesAction key={`${item.key}-request-changes`} item={item} />
           <PullRequestApproveAction key={`${item.key}-approve`} item={item} />
           <PullRequestAgentActions key={item.key} pr={item} />
         </div>
