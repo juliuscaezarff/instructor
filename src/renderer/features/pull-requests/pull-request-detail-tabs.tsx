@@ -59,11 +59,11 @@ const FILE_STATUS_COPY: Record<PullRequestFile["status"], { label: string; short
   changed: { label: "Changed", short: "M" },
 }
 
-function GitHubAvatar({ login }: { login?: string }) {
+function GitHubAvatar({ login, className }: { login?: string; className?: string }) {
   const [failed, setFailed] = useState(false)
   if (!login || failed) {
     return (
-      <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+      <span className={cn("inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground", className)}>
         <GitHubLogo className="size-3" aria-hidden="true" />
       </span>
     )
@@ -73,7 +73,7 @@ function GitHubAvatar({ login }: { login?: string }) {
     <img
       src={`https://github.com/${encodeURIComponent(login)}.png?size=64`}
       alt=""
-      className="size-5 shrink-0 rounded-full object-cover ring-1 ring-black/10 dark:ring-white/10"
+      className={cn("size-5 shrink-0 rounded-full object-cover ring-1 ring-black/10 dark:ring-white/10", className)}
       loading="lazy"
       onError={() => setFailed(true)}
     />
@@ -356,8 +356,14 @@ function ActivityIcon({ item }: { item: PullRequestActivityItem }) {
     const StateIcon = item.state === "merged" ? GitMerge : item.state === "closed" ? GitPullRequestClosed : GitPullRequest
     const colorClass = item.state === "merged" ? "text-violet-500" : item.state === "closed" ? "text-destructive" : "text-emerald-500"
     return (
-      <span className={cn("flex size-5 shrink-0 items-center justify-center", colorClass)}>
-        <StateIcon className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+      <span className="relative flex size-5 shrink-0 items-center justify-center">
+        <span className={cn("flex size-5 items-center justify-center", colorClass)}>
+          <StateIcon className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+        </span>
+        <GitHubAvatar
+          login={item.author}
+          className="absolute -bottom-1 -right-1 size-3 ring-2 ring-background"
+        />
       </span>
     )
   }
@@ -424,8 +430,7 @@ export function PullRequestActivitySection({
                   )}
                 </div>
                 <div className="min-w-0 flex-1 pb-3">
-                  <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs leading-5">
-                    {activityItem.kind === "state" && <GitHubAvatar login={activityItem.author} />}
+                  <div className="flex min-w-0 flex-wrap items-baseline gap-x-1 text-xs leading-5">
                     <span className="font-medium text-foreground">{activityItem.author || "Unknown author"}</span>
                     <span className="text-muted-foreground">{activityLabel(activityItem)}</span>
                     {activityItem.kind === "commit" && (
