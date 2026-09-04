@@ -346,7 +346,7 @@ function ActivityIcon({ item }: { item: PullRequestActivityItem }) {
 
   if (item.kind === "commit") {
     return (
-      <span className="flex size-5 shrink-0 items-center justify-center text-muted-foreground">
+      <span className="relative flex size-5 shrink-0 items-center justify-center rounded-full bg-background text-muted-foreground">
         <GitCommitHorizontal className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
       </span>
     )
@@ -356,7 +356,7 @@ function ActivityIcon({ item }: { item: PullRequestActivityItem }) {
     const StateIcon = item.state === "merged" ? GitMerge : item.state === "closed" ? GitPullRequestClosed : GitPullRequest
     const colorClass = item.state === "merged" ? "text-violet-500" : item.state === "closed" ? "text-destructive" : "text-emerald-500"
     return (
-      <span className="relative flex size-5 shrink-0 items-center justify-center">
+      <span className="relative flex size-5 shrink-0 items-center justify-center rounded-full bg-background">
         <span className={cn("flex size-5 items-center justify-center", colorClass)}>
           <StateIcon className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
         </span>
@@ -374,7 +374,7 @@ function ActivityIcon({ item }: { item: PullRequestActivityItem }) {
   return (
     <span
       className={cn(
-        "flex size-5 shrink-0 items-center justify-center",
+        "relative flex size-5 shrink-0 items-center justify-center rounded-full bg-background",
         isApproved ? "text-emerald-500" : isChangesRequested ? "text-destructive" : "text-muted-foreground",
       )}
     >
@@ -424,10 +424,10 @@ export function PullRequestActivitySection({
             {data.items.map((activityItem, index) => (
               <li key={activityItem.id} className="relative flex gap-2.5">
                 <div className="relative flex w-5 flex-none flex-col items-center">
-                  <ActivityIcon item={activityItem} />
                   {index < data.items.length - 1 && (
-                    <span className="absolute top-5 bottom-[-12px] w-px bg-border" aria-hidden="true" />
+                    <span className="absolute left-1/2 top-5 bottom-[-12px] w-px -translate-x-1/2 bg-border" aria-hidden="true" />
                   )}
+                  <ActivityIcon item={activityItem} />
                 </div>
                 <div className="min-w-0 flex-1 pb-3">
                   <div className="flex min-w-0 flex-wrap items-baseline gap-x-1 text-xs leading-5">
