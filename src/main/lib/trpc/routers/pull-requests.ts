@@ -4,6 +4,7 @@ import { getDatabase, projects } from "../../db"
 import {
   approvePullRequest,
   createPullRequestComment,
+  getCurrentGitHubUser,
   getPullRequestActivity,
   getPullRequestDetail,
   getPullRequestFileDiff,
@@ -33,6 +34,7 @@ const workspaceIdentity = z.object({
 })
 
 export const pullRequestsRouter = router({
+  currentUser: publicProcedure.query(async () => ({ login: await getCurrentGitHubUser() })),
   workspaceTargets: publicProcedure.input(workspaceIdentity).query(({ input }) => getPullRequestWorkspaceTargets(input)),
   prepareWorkspace: publicProcedure.input(workspaceIdentity.extend({
     projectId: z.string().min(1), workspaceId: z.string().optional(),
