@@ -58,9 +58,10 @@ describe("pull request repository aggregation", () => {
       [
         {
           items: [summary("maestro/app#1", 100), summary("maestro/app#2", 200)],
+          hasNextPage: false,
           failure: null,
         },
-        { items: [], failure },
+        { items: [], hasNextPage: false, failure },
       ],
     )
 
@@ -80,11 +81,31 @@ describe("pull request repository aggregation", () => {
     }
     const result = aggregatePullRequestResults(
       ["maestro/app"],
-      [{ items: [], failure }],
+      [{ items: [], hasNextPage: false, failure }],
     )
 
     expect(result.status).toBe("unavailable")
     expect(result.items).toHaveLength(0)
+  })
+
+  it("reports hasMore when any repository still has a next page", () => {
+    const exhausted = aggregatePullRequestResults(
+      ["maestro/app", "maestro/web"],
+      [
+        { items: [summary("maestro/app#1", 100)], hasNextPage: false, failure: null },
+        { items: [summary("maestro/web#1", 50)], hasNextPage: false, failure: null },
+      ],
+    )
+    expect(exhausted.hasMore).toBe(false)
+
+    const withMore = aggregatePullRequestResults(
+      ["maestro/app", "maestro/web"],
+      [
+        { items: [summary("maestro/app#1", 100)], hasNextPage: true, failure: null },
+        { items: [summary("maestro/web#1", 50)], hasNextPage: false, failure: null },
+      ],
+    )
+    expect(withMore.hasMore).toBe(true)
   })
 })
 
