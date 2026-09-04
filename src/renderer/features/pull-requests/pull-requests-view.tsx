@@ -8,11 +8,11 @@ import {
   CheckCircle2,
   ChevronDown,
   CircleDot,
-  CircleOff,
   Clock3,
   GitBranch,
   GitMerge,
   GitPullRequest,
+  GitPullRequestClosed,
   RefreshCw,
   Search,
   SlidersHorizontal,
@@ -161,7 +161,7 @@ const STATE_COPY = {
   draft: { label: "Draft", icon: GitPullRequest, className: "text-muted-foreground" },
   open: { label: "Open", icon: CircleDot, className: "text-emerald-500" },
   merged: { label: "Merged", icon: GitMerge, className: "text-violet-500" },
-  closed: { label: "Closed", icon: CircleOff, className: "text-destructive" },
+  closed: { label: "Closed", icon: GitPullRequestClosed, className: "text-destructive" },
 } as const
 
 const REVIEW_COPY = {
@@ -227,7 +227,7 @@ const GROUP_COPY: Record<
   },
   closed: {
     label: "Closed",
-    icon: CircleOff,
+    icon: GitPullRequestClosed,
     className: "text-destructive",
   },
 }
