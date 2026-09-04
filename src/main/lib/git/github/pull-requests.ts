@@ -85,6 +85,30 @@ const GHPullRequestActivitySchema = z.object({
   reviews: z.array(GHActivityReviewSchema).default([]),
 })
 
+const GHTimelineNodeSchema = z.object({
+  __typename: z.string(),
+  actor: z.object({ login: z.string() }).nullable().optional(),
+  createdAt: z.string().optional(),
+})
+
+const GHPullRequestTimelineSchema = z.object({
+  data: z
+    .object({
+      repository: z
+        .object({
+          pullRequest: z
+            .object({
+              timelineItems: z.object({
+                nodes: z.array(GHTimelineNodeSchema),
+              }),
+            })
+            .nullable(),
+        })
+        .nullable(),
+    })
+    .nullable(),
+})
+
 const GHRestPullRequestFileSchema = z.object({
   filename: z.string(),
   previous_filename: z.string().optional(),
@@ -206,6 +230,14 @@ export type PullRequestActivityItem =
       bodyTruncated?: boolean
       state: string
       url?: string
+    }
+  | {
+      id: string
+      kind: "state"
+      author?: string
+      createdAt: number
+      bodyTruncated?: boolean
+      state: "closed" | "reopened" | "merged"
     }
 
 export interface PullRequestActivityResult {
@@ -401,6 +433,61 @@ export function normalizePullRequestActivity(
     truncated:
       items.length > MAX_ACTIVITY_ITEMS ||
       items.some((item) => item.bodyTruncated),
+  }
+}
+
+const STATE_EVENT_KIND: Record<string, "closed" | "reopened" | "merged"> = {
+  ClosedEvent: "closed",
+  ReopenedEvent: "reopened",
+  MergedEvent: "merged",
+}
+
+export function normalizePullRequestStateEvents(
+  nodes: z.infer<typeof GHTimelineNodeSchema>[],
+): PullRequestActivityItem[] {
+  return nodes.flatMap((node, index) => {
+    const state = STATE_EVENT_KIND[node.__typename]
+    if (!state || !node.createdAt) return []
+    return [{
+      id: `${state}-${index}-${node.createdAt}`,
+      kind: "state" as const,
+      author: node.actor?.login,
+      createdAt: parseDate(node.createdAt) ?? 0,
+      state,
+    }]
+  })
+}
+
+async function getPullRequestStateEvents(
+  repository: GitHubRepositoryRef,
+  number: number,
+): Promise<PullRequestActivityItem[]> {
+  const query = `query($owner: String!, $repo: String!, $number: Int!) {
+    repository(owner: $owner, name: $repo) {
+      pullRequest(number: $number) {
+        timelineItems(itemTypes: [CLOSED_EVENT, REOPENED_EVENT, MERGED_EVENT], first: 100) {
+          nodes {
+            __typename
+            ... on ClosedEvent { actor { login } createdAt }
+            ... on ReopenedEvent { actor { login } createdAt }
+            ... on MergedEvent { actor { login } createdAt }
+          }
+        }
+      }
+    }
+  }`
+
+  try {
+    const { stdout } = await execWithShellEnv(
+      "gh",
+      ["api", "graphql", "-f", `query=${query}`, "-f", `owner=${repository.owner}`, "-f", `repo=${repository.repository}`, "-F", `number=${number}`],
+      { timeout: 20_000 },
+    )
+    const parsed = GHPullRequestTimelineSchema.parse(JSON.parse(stdout))
+    const nodes = parsed.data?.repository?.pullRequest?.timelineItems.nodes ?? []
+    return normalizePullRequestStateEvents(nodes)
+  } catch {
+    return []
   }
 }
 
@@ -804,23 +891,31 @@ export async function getPullRequestActivity(
   const cached = activityCache.get(cacheKey)
   if (!forceRefresh && cached && cached.expiresAt > Date.now()) return cached.result
 
-  const { stdout } = await execWithShellEnv(
-    "gh",
-    [
-      "pr",
-      "view",
-      String(number),
-      "--repo",
-      repositoryFullName,
-      "--json",
-      "commits,comments,reviews",
-    ],
-    { timeout: 20_000, maxBuffer: MAX_ACTIVITY_RESPONSE_BYTES },
-  )
+  const [{ stdout }, stateEvents] = await Promise.all([
+    execWithShellEnv(
+      "gh",
+      [
+        "pr",
+        "view",
+        String(number),
+        "--repo",
+        repositoryFullName,
+        "--json",
+        "commits,comments,reviews",
+      ],
+      { timeout: 20_000, maxBuffer: MAX_ACTIVITY_RESPONSE_BYTES },
+    ),
+    getPullRequestStateEvents(repository, number),
+  ])
 
   const raw = GHPullRequestActivitySchema.parse(JSON.parse(stdout))
-  const result = {
-    ...normalizePullRequestActivity(raw),
+  const base = normalizePullRequestActivity(raw)
+  const combined = [...base.items, ...stateEvents].sort((a, b) => a.createdAt - b.createdAt)
+  const total = base.total + stateEvents.length
+  const result: PullRequestActivityResult = {
+    items: combined.slice(-MAX_ACTIVITY_ITEMS),
+    total,
+    truncated: total > MAX_ACTIVITY_ITEMS || base.truncated,
     sourceKey: cacheKey,
   }
   activityCache.set(cacheKey, {
