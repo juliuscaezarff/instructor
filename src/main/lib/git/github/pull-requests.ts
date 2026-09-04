@@ -270,6 +270,7 @@ const MAX_ACTIVITY_BODY_CHARS = 50_000
 const MAX_ACTIVITY_RESPONSE_BYTES = 4_000_000
 const MAX_PATCH_BYTES = 500_000
 const MAX_PATCH_LINES = 5_000
+const CURRENT_USER_CACHE_TTL_MS = 5 * 60_000
 
 const listCache = new Map<
   string,
@@ -291,6 +292,26 @@ const fileDiffCache = new Map<
   string,
   { expiresAt: number; result: PullRequestFileDiff }
 >()
+let currentUserCache: { expiresAt: number; login: string | null } | null = null
+
+const GHUserSchema = z.object({ login: z.string() })
+
+export async function getCurrentGitHubUser(): Promise<string | null> {
+  if (currentUserCache && currentUserCache.expiresAt > Date.now()) {
+    return currentUserCache.login
+  }
+
+  let login: string | null = null
+  try {
+    const { stdout } = await execWithShellEnv("gh", ["api", "user"], { timeout: 10_000 })
+    login = GHUserSchema.parse(JSON.parse(stdout)).login
+  } catch {
+    login = null
+  }
+
+  currentUserCache = { expiresAt: Date.now() + CURRENT_USER_CACHE_TTL_MS, login }
+  return login
+}
 
 function parseDate(value: string | null | undefined): number | undefined {
   if (!value) return undefined
