@@ -15,6 +15,8 @@ import {
   PullRequestChecksError,
   PullRequestCommentError,
   PullRequestReviewError,
+  PullRequestStateError,
+  reopenPullRequest,
   requestChangesOnPullRequest,
   rerunFailedChecks,
   type GitHubAvailabilityIssue,
@@ -260,6 +262,37 @@ export const pullRequestsRouter = router({
         )
       } catch (error) {
         if (error instanceof PullRequestChecksError) {
+          throw new TRPCError({
+            code: mutationErrorCode(error.issue),
+            message: error.message,
+          })
+        }
+        throw error
+      }
+    }),
+
+  reopen: publicProcedure
+    .input(
+      z.object({
+        owner: z.string().trim().min(1),
+        repository: z.string().trim().min(1),
+        number: z.number().int().positive(),
+        comment: z
+          .string()
+          .max(MAX_COMMENT_BODY_CHARS, `Comment is too long. Limit is ${MAX_COMMENT_BODY_CHARS} characters.`)
+          .optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      try {
+        await reopenPullRequest(
+          { owner: input.owner, repository: input.repository },
+          input.number,
+          input.comment,
+        )
+        return { success: true } as const
+      } catch (error) {
+        if (error instanceof PullRequestStateError) {
           throw new TRPCError({
             code: mutationErrorCode(error.issue),
             message: error.message,
