@@ -8,6 +8,7 @@ import {
   normalizePullRequestFiles,
   normalizePullRequestStateEvents,
   normalizePullRequestSummary,
+  SORT_QUALIFIER,
   type PullRequestRepositoryFailure,
   type PullRequestSummary,
 } from "./pull-requests"
@@ -106,6 +107,13 @@ describe("pull request repository aggregation", () => {
       ],
     )
     expect(withMore.hasMore).toBe(true)
+  })
+
+  it("maps each sort option to a distinct GitHub search qualifier", () => {
+    expect(SORT_QUALIFIER.updated_desc).toBe("sort:updated-desc")
+    expect(SORT_QUALIFIER.created_desc).toBe("sort:created-desc")
+    expect(SORT_QUALIFIER.created_asc).toBe("sort:created-asc")
+    expect(new Set(Object.values(SORT_QUALIFIER)).size).toBe(3)
   })
 })
 
