@@ -392,11 +392,34 @@ const MAX_PATCH_LINES = 5_000
 const CURRENT_USER_CACHE_TTL_MS = 5 * 60_000
 
 export type PullRequestSortOption = "updated_desc" | "created_desc" | "created_asc"
+export type PullRequestCheckStateFilter = "success" | "failure" | "pending"
 
 export const SORT_QUALIFIER: Record<PullRequestSortOption, string> = {
   updated_desc: "sort:updated-desc",
   created_desc: "sort:created-desc",
   created_asc: "sort:created-asc",
+}
+
+const CHECK_STATE_QUALIFIER: Record<PullRequestCheckStateFilter, string> = {
+  success: "status:success",
+  failure: "status:failure",
+  pending: "status:pending",
+}
+
+export interface PullRequestSearchFilters {
+  sort: PullRequestSortOption
+  author?: string
+  reviewer?: string
+  checkState?: PullRequestCheckStateFilter
+}
+
+function searchFiltersEqual(a: PullRequestSearchFilters, b: PullRequestSearchFilters): boolean {
+  return (
+    a.sort === b.sort &&
+    a.author === b.author &&
+    a.reviewer === b.reviewer &&
+    a.checkState === b.checkState
+  )
 }
 
 const listCache = new Map<
@@ -406,7 +429,7 @@ const listCache = new Map<
     items: PullRequestSummary[]
     hasNextPage: boolean
     endCursor: string | null
-    sort: PullRequestSortOption
+    filters: PullRequestSearchFilters
   }
 >()
 const detailCache = new Map<
@@ -856,10 +879,22 @@ const PULL_REQUEST_SEARCH_QUERY = `query($q: String!, $cursor: String) {
   }
 }`
 
+export function buildPullRequestSearchQuery(
+  repositoryFullName: string,
+  filters: PullRequestSearchFilters,
+): string {
+  const qualifiers = [`repo:${repositoryFullName}`, "is:pr"]
+  if (filters.author?.trim()) qualifiers.push(`author:${filters.author.trim()}`)
+  if (filters.reviewer?.trim()) qualifiers.push(`reviewed-by:${filters.reviewer.trim()}`)
+  if (filters.checkState) qualifiers.push(CHECK_STATE_QUALIFIER[filters.checkState])
+  qualifiers.push(SORT_QUALIFIER[filters.sort])
+  return qualifiers.join(" ")
+}
+
 async function fetchPullRequestSearchPage(
   repository: GitHubRepositoryRef,
   cursor: string | null,
-  sort: PullRequestSortOption,
+  filters: PullRequestSearchFilters,
 ): Promise<{ items: PullRequestSummary[]; hasNextPage: boolean; endCursor: string | null }> {
   const repositoryFullName = `${repository.owner}/${repository.repository}`
   const args = [
@@ -868,7 +903,7 @@ async function fetchPullRequestSearchPage(
     "-f",
     `query=${PULL_REQUEST_SEARCH_QUERY}`,
     "-f",
-    `q=repo:${repositoryFullName} is:pr ${SORT_QUALIFIER[sort]}`,
+    `q=${buildPullRequestSearchQuery(repositoryFullName, filters)}`,
   ]
   if (cursor) args.push("-f", `cursor=${cursor}`)
 
@@ -888,18 +923,18 @@ async function listRepositoryPullRequests(
   repository: GitHubRepositoryRef,
   forceRefresh: boolean,
   loadMore: boolean,
-  sort: PullRequestSortOption,
+  filters: PullRequestSearchFilters,
 ): Promise<{ items: PullRequestSummary[]; hasNextPage: boolean }> {
   const repositoryFullName = `${repository.owner}/${repository.repository}`
   const cacheKey = repositoryFullName.toLowerCase()
   const cached = listCache.get(cacheKey)
-  const sortChanged = cached?.sort !== sort
+  const filtersChanged = !cached || !searchFiltersEqual(cached.filters, filters)
 
-  if (loadMore && cached && !sortChanged) {
+  if (loadMore && cached && !filtersChanged) {
     if (!cached.hasNextPage) {
       return { items: cached.items, hasNextPage: false }
     }
-    const page = await fetchPullRequestSearchPage(repository, cached.endCursor, sort)
+    const page = await fetchPullRequestSearchPage(repository, cached.endCursor, filters)
     const seenKeys = new Set(cached.items.map((item) => item.key))
     const merged = [...cached.items, ...page.items.filter((item) => !seenKeys.has(item.key))]
     listCache.set(cacheKey, {
@@ -907,22 +942,22 @@ async function listRepositoryPullRequests(
       items: merged,
       hasNextPage: page.hasNextPage,
       endCursor: page.endCursor,
-      sort,
+      filters,
     })
     return { items: merged, hasNextPage: page.hasNextPage }
   }
 
-  if (!loadMore && !forceRefresh && !sortChanged && cached && cached.expiresAt > Date.now()) {
+  if (!loadMore && !forceRefresh && !filtersChanged && cached && cached.expiresAt > Date.now()) {
     return { items: cached.items, hasNextPage: cached.hasNextPage }
   }
 
-  const page = await fetchPullRequestSearchPage(repository, null, sort)
+  const page = await fetchPullRequestSearchPage(repository, null, filters)
   listCache.set(cacheKey, {
     expiresAt: Date.now() + LIST_CACHE_TTL_MS,
     items: page.items,
     hasNextPage: page.hasNextPage,
     endCursor: page.endCursor,
-    sort,
+    filters,
   })
   return { items: page.items, hasNextPage: page.hasNextPage }
 }
@@ -931,7 +966,7 @@ export async function listPullRequests(
   repositories: GitHubRepositoryRef[],
   forceRefresh = false,
   loadMore = false,
-  sort: PullRequestSortOption = "updated_desc",
+  filters: PullRequestSearchFilters = { sort: "updated_desc" },
 ): Promise<PullRequestListResult> {
   const uniqueRepositories = deduplicateGitHubRepositories(repositories)
   const repositoryNames = uniqueRepositories.map(
@@ -958,7 +993,7 @@ export async function listPullRequests(
     async (repository) => {
       const repositoryFullName = `${repository.owner}/${repository.repository}`
       try {
-        const { items, hasNextPage } = await listRepositoryPullRequests(repository, forceRefresh, loadMore, sort)
+        const { items, hasNextPage } = await listRepositoryPullRequests(repository, forceRefresh, loadMore, filters)
         return { items, hasNextPage, failure: null }
       } catch (error) {
         return {
