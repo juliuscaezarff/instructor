@@ -1,14 +1,29 @@
+import { TRPCError } from "@trpc/server"
 import { z } from "zod"
 import { getDatabase, projects } from "../../db"
 import {
+  approvePullRequest,
+  createPullRequestComment,
   getPullRequestActivity,
   getPullRequestDetail,
   getPullRequestFileDiff,
   getPullRequestFiles,
   listPullRequests,
+  MAX_COMMENT_BODY_CHARS,
+  MAX_REVIEW_BODY_CHARS,
+  PullRequestCommentError,
+  PullRequestReviewError,
+  type GitHubAvailabilityIssue,
 } from "../../git/github/pull-requests"
 import { publicProcedure, router } from "../index"
 import { getPullRequestWorkspaceTargets, preparePullRequestWorkspace } from "../../git/github/pull-request-workspaces"
+
+function mutationErrorCode(issue: GitHubAvailabilityIssue): "PRECONDITION_FAILED" | "UNAUTHORIZED" | "FORBIDDEN" | "INTERNAL_SERVER_ERROR" {
+  if (issue === "gh_not_found") return "PRECONDITION_FAILED"
+  if (issue === "gh_not_authenticated") return "UNAUTHORIZED"
+  if (issue === "gh_permission_denied") return "FORBIDDEN"
+  return "INTERNAL_SERVER_ERROR"
+}
 
 const workspaceIdentity = z.object({
   owner: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9-]*$/),
@@ -122,4 +137,65 @@ export const pullRequestsRouter = router({
         Boolean(input.refreshToken),
       ),
     ),
+
+  comment: publicProcedure
+    .input(
+      z.object({
+        owner: z.string().trim().min(1),
+        repository: z.string().trim().min(1),
+        number: z.number().int().positive(),
+        body: z
+          .string()
+          .max(MAX_COMMENT_BODY_CHARS, `Comment is too long. Limit is ${MAX_COMMENT_BODY_CHARS} characters.`)
+          .refine((value) => value.trim().length > 0, "Comment cannot be empty."),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      try {
+        return await createPullRequestComment(
+          { owner: input.owner, repository: input.repository },
+          input.number,
+          input.body,
+        )
+      } catch (error) {
+        if (error instanceof PullRequestCommentError) {
+          throw new TRPCError({
+            code: mutationErrorCode(error.issue),
+            message: error.message,
+          })
+        }
+        throw error
+      }
+    }),
+
+  approve: publicProcedure
+    .input(
+      z.object({
+        owner: z.string().trim().min(1),
+        repository: z.string().trim().min(1),
+        number: z.number().int().positive(),
+        body: z
+          .string()
+          .max(MAX_REVIEW_BODY_CHARS, `Comment is too long. Limit is ${MAX_REVIEW_BODY_CHARS} characters.`)
+          .optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      try {
+        await approvePullRequest(
+          { owner: input.owner, repository: input.repository },
+          input.number,
+          input.body,
+        )
+        return { success: true } as const
+      } catch (error) {
+        if (error instanceof PullRequestReviewError) {
+          throw new TRPCError({
+            code: mutationErrorCode(error.issue),
+            message: error.message,
+          })
+        }
+        throw error
+      }
+    }),
 })
