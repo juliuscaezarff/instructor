@@ -1,13 +1,14 @@
 import { keepPreviousData } from "@tanstack/react-query"
 import { PatchDiff } from "@pierre/diffs/react"
 import {
-  Activity,
   AlertTriangle,
   ArrowUpRight,
+  CheckCircle2,
+  Circle,
   FileCode2,
   Files,
   GitCommitHorizontal,
-  MessageSquare,
+  XCircle,
 } from "lucide-react"
 import {
   Component,
@@ -33,6 +34,8 @@ import { trpc } from "../../lib/trpc"
 import { useCodeTheme } from "../../lib/hooks/use-code-theme"
 import { getShikiTheme } from "../../lib/themes/diff-view-highlighter"
 import { PIERRE_DIFFS_THEME_CSS } from "../../lib/themes/pierre-diffs"
+import { formatRelativeTime } from "./format-relative-time"
+import { PullRequestCommentComposer } from "./pull-request-comment-composer"
 import type {
   PullRequestActivityItem,
   PullRequestActivityResult,
@@ -42,7 +45,7 @@ import type {
   PullRequestSummary,
 } from "../../../main/lib/git/github/pull-requests"
 
-type DetailTab = "summary" | "files" | "activity"
+type DetailTab = "summary" | "files"
 
 const FILE_STATUS_COPY: Record<PullRequestFile["status"], { label: string; short: string }> = {
   added: { label: "Added", short: "A" },
@@ -330,28 +333,43 @@ function activityLabel(item: PullRequestActivityItem): string {
   return item.state.replaceAll("_", " ").toLowerCase()
 }
 
-function formatActivityTime(timestamp: number): string {
-  if (!timestamp) return "Unknown time"
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(timestamp)
+function ActivityIcon({ item }: { item: PullRequestActivityItem }) {
+  if (item.kind === "comment") return <GitHubAvatar login={item.author} />
+
+  if (item.kind === "commit") {
+    return (
+      <span className="flex size-5 shrink-0 items-center justify-center text-muted-foreground">
+        <GitCommitHorizontal className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+      </span>
+    )
+  }
+
+  const isApproved = item.state === "approved"
+  const isChangesRequested = item.state === "changes_requested"
+  const ReviewIcon = isApproved ? CheckCircle2 : isChangesRequested ? XCircle : Circle
+  return (
+    <span
+      className={cn(
+        "flex size-5 shrink-0 items-center justify-center",
+        isApproved ? "text-emerald-500" : isChangesRequested ? "text-destructive" : "text-muted-foreground",
+      )}
+    >
+      <ReviewIcon className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+    </span>
+  )
 }
 
-function ActivityPanel({
+export function PullRequestActivitySection({
   item,
-  active,
   refreshToken,
 }: {
   item: PullRequestSummary
-  active: boolean
   refreshToken: number
 }) {
   const openExternal = trpc.external.openExternal.useMutation()
   const activityQuery = trpc.pullRequests.activity.useQuery(
     { owner: item.owner, repository: item.repository, number: item.number, refreshToken },
     {
-      enabled: active,
       staleTime: 30_000,
       placeholderData: keepPreviousData,
       refetchOnWindowFocus: false,
@@ -361,80 +379,77 @@ function ActivityPanel({
   const sourceKey = `${item.repositoryFullName}#${item.number}`.toLowerCase()
   const data = queriedData?.sourceKey === sourceKey ? queriedData : undefined
 
-  if (activityQuery.isPending && !data) return <LoadingRows />
-  if (activityQuery.isError) {
-    return <SectionError message="Unable to load pull request activity." onRetry={() => activityQuery.refetch()} />
-  }
-  if (!data?.items.length) {
-    return <p className="px-6 py-8 text-sm text-muted-foreground">No commits, comments, or reviews reported.</p>
-  }
-
   return (
-    <div className="px-6 pb-8">
-      <div className="flex items-center justify-between gap-3 py-3 text-xs text-muted-foreground">
-        <span>{data.total} {data.total === 1 ? "activity item" : "activity items"}</span>
-        {data.truncated && (
-          <span>
-            {data.items.length < data.total
-              ? `Showing latest ${data.items.length}`
-              : "Some content truncated"}
-          </span>
-        )}
-      </div>
-      <ol className="divide-y divide-border/50 border-y border-border/50">
-        {data.items.map((activityItem) => {
-          const ItemIcon = activityItem.kind === "commit"
-            ? GitCommitHorizontal
-            : activityItem.kind === "comment"
-              ? MessageSquare
-              : Activity
-          return (
-            <li key={activityItem.id} className="grid grid-cols-[20px_minmax(0,1fr)] gap-3 py-4">
-              <span className="flex size-5 items-center justify-center text-muted-foreground">
-                <ItemIcon className="size-4" strokeWidth={1.75} aria-hidden="true" />
-              </span>
-              <div className="min-w-0">
-                <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">
-                  <GitHubAvatar login={activityItem.author} />
-                  <span className="font-medium text-foreground">{activityItem.author || "Unknown author"}</span>
-                  <span className="text-muted-foreground">{activityLabel(activityItem)}</span>
-                  {activityItem.kind === "commit" && (
-                    <code className="rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
-                      {activityItem.sha.slice(0, 7)}
-                    </code>
-                  )}
-                  <time className="ms-auto text-[11px] text-muted-foreground" dateTime={activityItem.createdAt ? new Date(activityItem.createdAt).toISOString() : undefined}>
-                    {formatActivityTime(activityItem.createdAt)}
-                  </time>
-                  {activityItem.kind !== "commit" && activityItem.url && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-6 text-muted-foreground"
-                      onClick={() => openExternal.mutate(activityItem.url!)}
-                      aria-label="Open activity item on GitHub"
-                    >
-                      <ArrowUpRight className="size-3.5" aria-hidden="true" />
-                    </Button>
+    <section className="border-t border-border/50 pt-5" aria-labelledby="activity-heading">
+      <h3 id="activity-heading" className="text-xs font-semibold text-foreground">Activity</h3>
+
+      {activityQuery.isPending && !data ? (
+        <div className="mt-3"><LoadingRows count={3} /></div>
+      ) : activityQuery.isError ? (
+        <div className="mt-2"><SectionError message="Unable to load pull request activity." onRetry={() => activityQuery.refetch()} /></div>
+      ) : !data?.items.length ? (
+        <p className="mt-2 text-xs text-muted-foreground">No commits, comments, or reviews yet.</p>
+      ) : (
+        <>
+          {data.truncated && (
+            <p role="status" className="mt-1 text-[11px] text-muted-foreground">
+              {data.items.length < data.total ? `Showing the latest ${data.items.length}.` : "Some content was truncated."}
+            </p>
+          )}
+          <ol className="mt-3">
+            {data.items.map((activityItem, index) => (
+              <li key={activityItem.id} className="relative flex gap-2.5">
+                <div className="relative flex w-5 flex-none flex-col items-center">
+                  <ActivityIcon item={activityItem} />
+                  {index < data.items.length - 1 && (
+                    <span className="absolute top-5 bottom-[-12px] w-px bg-border" aria-hidden="true" />
                   )}
                 </div>
-                {activityItem.kind === "commit" ? (
-                  <div className="mt-2">
-                    <p className="text-sm font-medium leading-snug text-foreground text-pretty">{activityItem.title}</p>
-                    {activityItem.body && <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">{activityItem.body}</p>}
+                <div className="min-w-0 flex-1 pb-3">
+                  <div className="flex min-w-0 flex-wrap items-baseline gap-x-1 text-xs leading-5">
+                    <span className="font-medium text-foreground">{activityItem.author || "Unknown author"}</span>
+                    <span className="text-muted-foreground">{activityLabel(activityItem)}</span>
+                    {activityItem.kind === "commit" && (
+                      <code className="rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+                        {activityItem.sha.slice(0, 7)}
+                      </code>
+                    )}
+                    <span className="text-muted-foreground" aria-hidden="true">·</span>
+                    <time className="text-muted-foreground" dateTime={activityItem.createdAt ? new Date(activityItem.createdAt).toISOString() : undefined}>
+                      {formatRelativeTime(activityItem.createdAt)}
+                    </time>
+                    {activityItem.kind !== "commit" && activityItem.url && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="ms-auto -my-1 size-5 text-muted-foreground"
+                        onClick={() => openExternal.mutate(activityItem.url!)}
+                        aria-label="Open activity item on GitHub"
+                      >
+                        <ArrowUpRight className="size-3" aria-hidden="true" />
+                      </Button>
+                    )}
                   </div>
-                ) : activityItem.body ? (
-                  <CompactMarkdownRenderer content={activityItem.body} className="mt-2 max-w-[75ch]" />
-                ) : null}
-                {activityItem.bodyTruncated && (
-                  <p className="mt-2 text-[11px] text-muted-foreground">Content truncated for performance.</p>
-                )}
-              </div>
-            </li>
-          )
-        })}
-      </ol>
-    </div>
+                  {activityItem.kind === "commit" ? (
+                    <div className="mt-1">
+                      <p className="text-xs leading-snug text-foreground text-pretty">{activityItem.title}</p>
+                      {activityItem.body && <p className="mt-1 whitespace-pre-wrap text-[11px] leading-relaxed text-muted-foreground">{activityItem.body}</p>}
+                    </div>
+                  ) : activityItem.body ? (
+                    <CompactMarkdownRenderer content={activityItem.body} className="mt-1 max-w-[70ch]" />
+                  ) : null}
+                  {activityItem.bodyTruncated && (
+                    <p className="mt-1 text-[11px] text-muted-foreground">Content truncated for performance.</p>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ol>
+        </>
+      )}
+
+      <PullRequestCommentComposer item={item} />
+    </section>
   )
 }
 
@@ -476,23 +491,14 @@ export function PullRequestDetailTabs({
           <Files className="size-3.5" aria-hidden="true" />
           Files
         </TabsTrigger>
-        <TabsTrigger
-          value="activity"
-          className="h-9 gap-1.5 rounded-none border-b-2 border-transparent px-2 text-xs shadow-none data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none"
-        >
-          <Activity className="size-3.5" aria-hidden="true" />
-          Activity
-        </TabsTrigger>
       </TabsList>
 
       <TabsContent forceMount value="summary" className="mt-0 min-h-0 flex-1 overflow-y-auto px-6 pb-8 pt-3 focus-visible:ring-inset data-[state=inactive]:hidden">
         {summary}
+        <PullRequestActivitySection item={item} refreshToken={refreshToken} />
       </TabsContent>
       <TabsContent forceMount value="files" className="mt-0 min-h-0 flex-1 overflow-y-auto focus-visible:ring-inset data-[state=inactive]:hidden">
         <FilesPanel item={item} active={activeTab === "files"} refreshToken={refreshToken} />
-      </TabsContent>
-      <TabsContent forceMount value="activity" className="mt-0 min-h-0 flex-1 overflow-y-auto focus-visible:ring-inset data-[state=inactive]:hidden">
-        <ActivityPanel item={item} active={activeTab === "activity"} refreshToken={refreshToken} />
       </TabsContent>
     </Tabs>
   )
