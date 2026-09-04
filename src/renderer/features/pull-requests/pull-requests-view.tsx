@@ -72,6 +72,7 @@ import { PullRequestAgentActions } from "./pull-request-agent-actions"
 import { PullRequestApproveAction } from "./pull-request-approve-action"
 import { PullRequestRequestChangesAction } from "./pull-request-request-changes-action"
 import { PullRequestRerunChecksAction } from "./pull-request-rerun-checks-action"
+import { PullRequestReopenAction } from "./pull-request-reopen-action"
 import { formatRelativeTime } from "./format-relative-time"
 import { pullRequestKeyFromUrl } from "../../../shared/pull-request-agent-context"
 
@@ -473,6 +474,7 @@ function PullRequestDetailPane({
           <PullRequestRequestChangesAction key={`${item.key}-request-changes`} item={item} currentUserLogin={currentUserQuery.data?.login} />
           <PullRequestApproveAction key={`${item.key}-approve`} item={item} currentUserLogin={currentUserQuery.data?.login} />
           {detail && <PullRequestRerunChecksAction key={`${item.key}-rerun-checks`} item={item} checkItems={detail.checkItems} />}
+          <PullRequestReopenAction key={`${item.key}-reopen`} item={item} />
           <PullRequestAgentActions key={item.key} pr={item} />
         </div>
         {!compact && (
