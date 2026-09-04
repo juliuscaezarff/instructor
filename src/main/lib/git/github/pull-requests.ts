@@ -3,6 +3,7 @@ import { execWithShellEnv } from "../shell-env"
 import { GHCheckContextSchema } from "./types"
 import { MAX_COMMENT_BODY_CHARS } from "../../../../shared/pull-request-comment"
 import { MAX_REVIEW_BODY_CHARS } from "../../../../shared/pull-request-review"
+import { extractActionsRunId } from "../../../../shared/pull-request-checks"
 
 export { MAX_COMMENT_BODY_CHARS, MAX_REVIEW_BODY_CHARS }
 
@@ -925,6 +926,66 @@ export async function requestChangesOnPullRequest(
   detailCache.delete(cacheKey)
   activityCache.delete(cacheKey)
   listCache.delete(repositoryFullName.toLowerCase())
+}
+
+export class PullRequestChecksError extends Error {
+  issue: GitHubAvailabilityIssue
+
+  constructor(issue: GitHubAvailabilityIssue, message: string) {
+    super(message)
+    this.name = "PullRequestChecksError"
+    this.issue = issue
+  }
+}
+
+export interface RerunChecksOutcome {
+  rerunRunCount: number
+  unsupportedChecks: string[]
+  failedRuns: Array<{ runId: string; message: string }>
+}
+
+export async function rerunFailedChecks(
+  repository: GitHubRepositoryRef,
+  number: number,
+  failedChecks: Array<{ name: string; url?: string }>,
+): Promise<RerunChecksOutcome> {
+  const repositoryFullName = `${repository.owner}/${repository.repository}`
+
+  const runIds = new Set<string>()
+  const unsupportedChecks: string[] = []
+  for (const check of failedChecks) {
+    const runId = extractActionsRunId(check.url)
+    if (runId) runIds.add(runId)
+    else unsupportedChecks.push(check.name)
+  }
+
+  let rerunRunCount = 0
+  const failedRuns: Array<{ runId: string; issue: GitHubAvailabilityIssue; message: string }> = []
+
+  for (const runId of runIds) {
+    try {
+      await execWithShellEnv("gh", ["run", "rerun", runId, "--repo", repositoryFullName, "--failed"], { timeout: 20_000 })
+      rerunRunCount += 1
+    } catch (error) {
+      failedRuns.push({ runId, issue: classifyGitHubError(error), message: errorMessage(error) })
+    }
+  }
+
+  if (runIds.size > 0 && rerunRunCount === 0) {
+    const first = failedRuns[0]!
+    throw new PullRequestChecksError(first.issue, first.message)
+  }
+
+  const cacheKey = `${repositoryFullName.toLowerCase()}#${number}`
+  detailCache.delete(cacheKey)
+  activityCache.delete(cacheKey)
+  listCache.delete(repositoryFullName.toLowerCase())
+
+  return {
+    rerunRunCount,
+    unsupportedChecks,
+    failedRuns: failedRuns.map(({ runId, message }) => ({ runId, message })),
+  }
 }
 
 export class PullRequestCommentError extends Error {
