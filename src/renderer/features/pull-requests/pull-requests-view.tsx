@@ -66,10 +66,16 @@ import type {
   PullRequestSummary,
 } from "../../../main/lib/git/github/pull-requests"
 import {
+  pullRequestAgentFilterAtom,
+  pullRequestAuthorFilterAtom,
+  pullRequestCheckStateFilterAtom,
   pullRequestDetailWidthAtom,
   pullRequestRepositoryFilterAtom,
+  pullRequestReviewerFilterAtom,
   pullRequestSortAtom,
   pullRequestStateFilterAtom,
+  type PullRequestAgentFilter,
+  type PullRequestCheckStateFilter,
   type PullRequestSortOption,
   type PullRequestStateFilter,
 } from "./atoms"
@@ -114,6 +120,22 @@ function AgentIcon({ provider }: { provider: AgentProvider | null }) {
       title={`Linked workspace agent: ${presentation.label}`}
     >
       <Icon className="size-3.5" />
+    </span>
+  )
+}
+
+function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <span className="inline-flex h-6 items-center gap-1 rounded-full border border-border/70 bg-foreground/[0.035] ps-2.5 pe-1 text-[11px] text-muted-foreground">
+      {label}
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label={`Remove filter: ${label}`}
+        className="inline-flex size-4 items-center justify-center rounded-full outline-none hover:bg-foreground/[0.08] hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/70"
+      >
+        <X className="size-3" aria-hidden="true" />
+      </button>
     </span>
   )
 }
@@ -693,6 +715,10 @@ export function PullRequestsView() {
     pullRequestRepositoryFilterAtom,
   )
   const [sort, setSort] = useAtom(pullRequestSortAtom)
+  const [authorFilter, setAuthorFilter] = useAtom(pullRequestAuthorFilterAtom)
+  const [reviewerFilter, setReviewerFilter] = useAtom(pullRequestReviewerFilterAtom)
+  const [checkStateFilter, setCheckStateFilter] = useAtom(pullRequestCheckStateFilterAtom)
+  const [agentFilter, setAgentFilter] = useAtom(pullRequestAgentFilterAtom)
   const [search, setSearch] = useState("")
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [refreshToken, setRefreshToken] = useState(0)
@@ -720,8 +746,16 @@ export function PullRequestsView() {
   const listScrollRef = useRef<HTMLDivElement>(null)
   const lastSelectedRowRef = useRef<HTMLButtonElement | null>(null)
 
+  const searchFilters = {
+    refreshToken,
+    sort,
+    author: authorFilter.trim() || undefined,
+    reviewer: reviewerFilter.trim() || undefined,
+    checkState: checkStateFilter ?? undefined,
+  }
+
   const listQuery = trpc.pullRequests.list.useQuery(
-    { refreshToken, sort },
+    searchFilters,
     {
       staleTime: 30_000,
       placeholderData: keepPreviousData,
@@ -738,8 +772,8 @@ export function PullRequestsView() {
     setIsLoadingMore(true)
     setLoadMoreError(null)
     try {
-      const result = await utils.pullRequests.list.fetch({ refreshToken, sort, loadMore: true })
-      utils.pullRequests.list.setData({ refreshToken, sort }, result)
+      const result = await utils.pullRequests.list.fetch({ ...searchFilters, loadMore: true })
+      utils.pullRequests.list.setData(searchFilters, result)
     } catch (error) {
       setLoadMoreError(error instanceof Error ? error.message : "Unable to load more pull requests.")
     } finally {
@@ -749,7 +783,7 @@ export function PullRequestsView() {
 
   useEffect(() => {
     setLoadMoreError(null)
-  }, [refreshToken, sort])
+  }, [refreshToken, sort, authorFilter, reviewerFilter, checkStateFilter])
   const projectsQuery = trpc.projects.list.useQuery(undefined, {
     staleTime: 60_000,
     refetchOnWindowFocus: false,
@@ -811,9 +845,15 @@ export function PullRequestsView() {
         !normalizedSearch ||
         item.title.toLowerCase().includes(normalizedSearch) ||
         String(item.number).includes(normalizedSearch)
-      return matchesState && matchesRepository && matchesSearch
+      const workspaces = workspacesByPullRequest.get(item.key.toLowerCase()) ?? []
+      const matchesAgent =
+        !agentFilter ||
+        (agentFilter === "none"
+          ? workspaces.every((workspace) => !workspace.provider)
+          : workspaces.some((workspace) => workspace.provider === agentFilter))
+      return matchesState && matchesRepository && matchesSearch && matchesAgent
     })
-  }, [data?.items, repositoryFilter, search, stateFilter])
+  }, [data?.items, repositoryFilter, search, stateFilter, agentFilter, workspacesByPullRequest])
 
   useEffect(() => {
     if (selectedKey && !filteredItems.some((item) => item.key === selectedKey)) {
@@ -910,11 +950,22 @@ export function PullRequestsView() {
     })
   }, [])
 
+  const activeFilterCount =
+    (repositoryFilter.length > 0 ? 1 : 0) +
+    (authorFilter.trim() ? 1 : 0) +
+    (reviewerFilter.trim() ? 1 : 0) +
+    (checkStateFilter ? 1 : 0) +
+    (agentFilter ? 1 : 0)
+
   const clearFilters = useCallback(() => {
     setStateFilter("all")
     setRepositoryFilter([])
     setSearch("")
-  }, [setRepositoryFilter, setStateFilter])
+    setAuthorFilter("")
+    setReviewerFilter("")
+    setCheckStateFilter(null)
+    setAgentFilter(null)
+  }, [setRepositoryFilter, setStateFilter, setAuthorFilter, setReviewerFilter, setCheckStateFilter, setAgentFilter])
 
   const primaryIssue = data?.failures[0]?.issue
   const unavailableTitle =
@@ -1013,13 +1064,13 @@ export function PullRequestsView() {
                   variant="outline"
                   size="icon"
                   className="relative size-8 rounded-lg border-border/70 bg-foreground/[0.035] text-muted-foreground shadow-none"
-                  aria-label={repositoryFilter.length === 0 ? "Filter by repository" : `Filter by repository, ${repositoryFilter.length} active`}
+                  aria-label={activeFilterCount === 0 ? "Filter pull requests" : `Filter pull requests, ${activeFilterCount} active`}
                 >
                   <SlidersHorizontal className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
-                  {repositoryFilter.length > 0 && <span className="absolute end-1 top-1 size-1.5 rounded-full bg-primary" aria-hidden="true" />}
+                  {activeFilterCount > 0 && <span className="absolute end-1 top-1 size-1.5 rounded-full bg-primary" aria-hidden="true" />}
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="min-w-56">
+              <DropdownMenuContent align="end" className="min-w-64">
                 <DropdownMenuLabel>Repositories</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 {(data?.repositories ?? []).map((repository) => (
@@ -1038,6 +1089,54 @@ export function PullRequestsView() {
                     {repository}
                   </DropdownMenuCheckboxItem>
                 ))}
+
+                <DropdownMenuLabel className="mt-1">Author</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <div className="px-2 py-1.5">
+                  <Input
+                    value={authorFilter}
+                    onChange={(event) => setAuthorFilter(event.target.value)}
+                    onKeyDown={(event) => event.stopPropagation()}
+                    placeholder="GitHub username"
+                    className="h-7 rounded-md border-border/70 bg-foreground/[0.035] text-xs shadow-none"
+                  />
+                </div>
+
+                <DropdownMenuLabel className="mt-1">Reviewer</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <div className="px-2 py-1.5">
+                  <Input
+                    value={reviewerFilter}
+                    onChange={(event) => setReviewerFilter(event.target.value)}
+                    onKeyDown={(event) => event.stopPropagation()}
+                    placeholder="Already reviewed by"
+                    className="h-7 rounded-md border-border/70 bg-foreground/[0.035] text-xs shadow-none"
+                  />
+                </div>
+
+                <DropdownMenuLabel className="mt-1">Check state</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuRadioGroup
+                  value={checkStateFilter ?? ""}
+                  onValueChange={(value) => setCheckStateFilter(value ? (value as PullRequestCheckStateFilter) : null)}
+                >
+                  <DropdownMenuRadioItem value="">Any</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="success">Passing</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="failure">Failing</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="pending">Pending</DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+
+                <DropdownMenuLabel className="mt-1">Agent</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuRadioGroup
+                  value={agentFilter ?? ""}
+                  onValueChange={(value) => setAgentFilter(value ? (value as PullRequestAgentFilter) : null)}
+                >
+                  <DropdownMenuRadioItem value="">Any</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="claude-code">Claude Code</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="codex">OpenAI Codex</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="none">No linked agent</DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
               </DropdownMenuContent>
             </DropdownMenu>
 
@@ -1053,9 +1152,29 @@ export function PullRequestsView() {
             </Button>
           </div>
 
-          {(search || repositoryFilter.length > 0) && (
-            <div className="mx-auto flex w-full max-w-3xl items-center px-4 pb-2">
+          {(search || activeFilterCount > 0) && (
+            <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-1.5 px-4 pb-2">
               <span className="text-[11px] tabular-nums text-muted-foreground">{filteredItems.length} shown</span>
+
+              {authorFilter.trim() && (
+                <FilterChip label={`Author: ${authorFilter.trim()}`} onRemove={() => setAuthorFilter("")} />
+              )}
+              {reviewerFilter.trim() && (
+                <FilterChip label={`Reviewed by: ${reviewerFilter.trim()}`} onRemove={() => setReviewerFilter("")} />
+              )}
+              {checkStateFilter && (
+                <FilterChip
+                  label={`Checks: ${checkStateFilter === "success" ? "Passing" : checkStateFilter === "failure" ? "Failing" : "Pending"}`}
+                  onRemove={() => setCheckStateFilter(null)}
+                />
+              )}
+              {agentFilter && (
+                <FilterChip
+                  label={`Agent: ${agentFilter === "none" ? "No linked agent" : AGENT_PRESENTATION[agentFilter].label}`}
+                  onRemove={() => setAgentFilter(null)}
+                />
+              )}
+
               <button
                 type="button"
                 onClick={clearFilters}
