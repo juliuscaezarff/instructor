@@ -2,7 +2,8 @@ import { useRef, useState } from "react"
 import { CheckCircle2, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "../../components/ui/button"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../../components/ui/dialog"
+import { CanvasDialogBody, CanvasDialogContent, CanvasDialogFooter, CanvasDialogHeader, Dialog, DialogDescription, DialogTitle } from "../../components/ui/dialog"
+import { Label } from "../../components/ui/label"
 import { Textarea } from "../../components/ui/textarea"
 import { cn } from "../../lib/utils"
 import { trpc } from "../../lib/trpc"
@@ -68,8 +69,8 @@ export function PullRequestApproveAction({ item }: { item: PullRequestSummary })
         <CheckCircle2 className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
       </Button>
       <Dialog open={open} onOpenChange={(next) => { if (!mutation.isPending) setOpen(next) }}>
-        <DialogContent
-          className="sm:max-w-md"
+        <CanvasDialogContent
+          className="sm:max-w-[400px]"
           onCloseAutoFocus={(event) => {
             event.preventDefault()
             triggerRef.current?.focus()
@@ -77,45 +78,61 @@ export function PullRequestApproveAction({ item }: { item: PullRequestSummary })
           onEscapeKeyDown={(event) => { if (mutation.isPending) event.preventDefault() }}
           onPointerDownOutside={(event) => { if (mutation.isPending) event.preventDefault() }}
         >
-          <DialogHeader>
+          <CanvasDialogHeader>
             <DialogTitle>Approve pull request</DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="truncate">
               {item.repositoryFullName}#{item.number} · {item.title}
             </DialogDescription>
-          </DialogHeader>
+          </CanvasDialogHeader>
           <form
-            className="space-y-3"
+            id="pr-approve-form"
             onSubmit={(event) => {
               event.preventDefault()
               void submit()
             }}
           >
-            <div className="space-y-2">
-              <label htmlFor="pr-approve-body" className="text-xs font-medium">Comment (optional)</label>
+            <CanvasDialogBody className="space-y-2">
+              <Label htmlFor="pr-approve-body">Comment (optional)</Label>
               <Textarea
                 id="pr-approve-body"
+                autoFocus
                 value={body}
                 disabled={mutation.isPending}
                 onChange={(event) => setBody(event.target.value)}
                 placeholder="Add an optional comment"
                 className="min-h-20 text-sm"
               />
-              <span className={cn("block text-[11px] tabular-nums", overLimit ? "text-destructive" : "text-muted-foreground")}>
-                {overLimit
-                  ? `${(body.length - MAX_REVIEW_BODY_CHARS).toLocaleString()} characters over the limit`
-                  : `${body.length.toLocaleString()} / ${MAX_REVIEW_BODY_CHARS.toLocaleString()}`}
-              </span>
-            </div>
-            {errorMessage && <p role="alert" className="text-sm text-destructive">{errorMessage}</p>}
-            <DialogFooter>
-              <Button type="button" variant="ghost" disabled={mutation.isPending} onClick={() => setOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={mutation.isPending || overLimit}>
+              <div className="flex items-center justify-between gap-3">
+                <span className={cn("text-[11px] tabular-nums", overLimit ? "text-destructive" : "text-muted-foreground")}>
+                  {overLimit
+                    ? `${(body.length - MAX_REVIEW_BODY_CHARS).toLocaleString()} characters over the limit`
+                    : `${body.length.toLocaleString()} / ${MAX_REVIEW_BODY_CHARS.toLocaleString()}`}
+                </span>
+              </div>
+              {errorMessage && <p role="alert" className="text-xs text-destructive">{errorMessage}</p>}
+            </CanvasDialogBody>
+            <CanvasDialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={mutation.isPending}
+                onClick={() => setOpen(false)}
+                className="rounded-md transition-transform duration-150 active:scale-[0.97]"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                form="pr-approve-form"
+                disabled={mutation.isPending || overLimit}
+                className="rounded-md transition-transform duration-150 active:scale-[0.97]"
+              >
                 {mutation.isPending && <Loader2 className="mr-2 size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />}
                 Approve
               </Button>
-            </DialogFooter>
+            </CanvasDialogFooter>
           </form>
-        </DialogContent>
+        </CanvasDialogContent>
       </Dialog>
     </>
   )
