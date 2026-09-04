@@ -13,6 +13,7 @@ import {
   GitPullRequest,
   GitPullRequestClosed,
   GitPullRequestDraft,
+  Loader2,
   RefreshCw,
   Search,
   SlidersHorizontal,
@@ -716,6 +717,27 @@ export function PullRequestsView() {
     },
   )
   const data = listQuery.data as PullRequestListResult | undefined
+  const utils = trpc.useUtils()
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null)
+
+  async function handleLoadMore() {
+    if (isLoadingMore) return
+    setIsLoadingMore(true)
+    setLoadMoreError(null)
+    try {
+      const result = await utils.pullRequests.list.fetch({ refreshToken, loadMore: true })
+      utils.pullRequests.list.setData({ refreshToken }, result)
+    } catch (error) {
+      setLoadMoreError(error instanceof Error ? error.message : "Unable to load more pull requests.")
+    } finally {
+      setIsLoadingMore(false)
+    }
+  }
+
+  useEffect(() => {
+    setLoadMoreError(null)
+  }, [refreshToken])
   const projectsQuery = trpc.projects.list.useQuery(undefined, {
     staleTime: 60_000,
     refetchOnWindowFocus: false,
@@ -1084,6 +1106,19 @@ export function PullRequestsView() {
                   )
                 })}
               </div>
+              {data?.hasMore && (
+                <div className="mx-auto flex w-full max-w-3xl justify-center px-4 py-4">
+                  <Button variant="outline" size="sm" onClick={handleLoadMore} disabled={isLoadingMore}>
+                    {isLoadingMore && <Loader2 className="mr-2 size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />}
+                    Load more
+                  </Button>
+                </div>
+              )}
+              {loadMoreError && (
+                <p role="alert" className="mx-auto max-w-3xl px-4 pb-4 text-center text-xs text-destructive">
+                  {loadMoreError}
+                </p>
+              )}
             </div>
           )}
         </div>
@@ -1136,7 +1171,13 @@ export function PullRequestsView() {
       )}
 
       <div className="sr-only" role="status" aria-live="polite">
-        {listQuery.isFetching ? "Refreshing pull requests" : data ? `${filteredItems.length} pull requests shown` : ""}
+        {listQuery.isFetching
+          ? "Refreshing pull requests"
+          : isLoadingMore
+            ? "Loading more pull requests"
+            : data
+              ? `${filteredItems.length} pull requests shown`
+              : ""}
       </div>
     </main>
   )
