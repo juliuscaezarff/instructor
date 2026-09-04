@@ -10,9 +10,11 @@ import {
   getPullRequestDetail,
   getPullRequestFileDiff,
   getPullRequestFiles,
+  getPullRequestMergeOptions,
   listPullRequests,
   MAX_COMMENT_BODY_CHARS,
   MAX_REVIEW_BODY_CHARS,
+  mergePullRequest,
   PullRequestChecksError,
   PullRequestCommentError,
   PullRequestReviewError,
@@ -321,6 +323,43 @@ export const pullRequestsRouter = router({
           { owner: input.owner, repository: input.repository },
           input.number,
           input.comment,
+        )
+        return { success: true } as const
+      } catch (error) {
+        if (error instanceof PullRequestStateError) {
+          throw new TRPCError({
+            code: mutationErrorCode(error.issue),
+            message: error.message,
+          })
+        }
+        throw error
+      }
+    }),
+
+  mergeOptions: publicProcedure
+    .input(
+      z.object({
+        owner: z.string().trim().min(1),
+        repository: z.string().trim().min(1),
+      }),
+    )
+    .query(({ input }) => getPullRequestMergeOptions({ owner: input.owner, repository: input.repository })),
+
+  merge: publicProcedure
+    .input(
+      z.object({
+        owner: z.string().trim().min(1),
+        repository: z.string().trim().min(1),
+        number: z.number().int().positive(),
+        method: z.enum(["merge", "squash", "rebase"]),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      try {
+        await mergePullRequest(
+          { owner: input.owner, repository: input.repository },
+          input.number,
+          input.method,
         )
         return { success: true } as const
       } catch (error) {
