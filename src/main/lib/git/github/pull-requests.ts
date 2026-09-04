@@ -391,9 +391,23 @@ const MAX_PATCH_BYTES = 500_000
 const MAX_PATCH_LINES = 5_000
 const CURRENT_USER_CACHE_TTL_MS = 5 * 60_000
 
+export type PullRequestSortOption = "updated_desc" | "created_desc" | "created_asc"
+
+export const SORT_QUALIFIER: Record<PullRequestSortOption, string> = {
+  updated_desc: "sort:updated-desc",
+  created_desc: "sort:created-desc",
+  created_asc: "sort:created-asc",
+}
+
 const listCache = new Map<
   string,
-  { expiresAt: number; items: PullRequestSummary[]; hasNextPage: boolean; endCursor: string | null }
+  {
+    expiresAt: number
+    items: PullRequestSummary[]
+    hasNextPage: boolean
+    endCursor: string | null
+    sort: PullRequestSortOption
+  }
 >()
 const detailCache = new Map<
   string,
@@ -845,6 +859,7 @@ const PULL_REQUEST_SEARCH_QUERY = `query($q: String!, $cursor: String) {
 async function fetchPullRequestSearchPage(
   repository: GitHubRepositoryRef,
   cursor: string | null,
+  sort: PullRequestSortOption,
 ): Promise<{ items: PullRequestSummary[]; hasNextPage: boolean; endCursor: string | null }> {
   const repositoryFullName = `${repository.owner}/${repository.repository}`
   const args = [
@@ -853,7 +868,7 @@ async function fetchPullRequestSearchPage(
     "-f",
     `query=${PULL_REQUEST_SEARCH_QUERY}`,
     "-f",
-    `q=repo:${repositoryFullName} is:pr sort:updated-desc`,
+    `q=repo:${repositoryFullName} is:pr ${SORT_QUALIFIER[sort]}`,
   ]
   if (cursor) args.push("-f", `cursor=${cursor}`)
 
@@ -873,16 +888,18 @@ async function listRepositoryPullRequests(
   repository: GitHubRepositoryRef,
   forceRefresh: boolean,
   loadMore: boolean,
+  sort: PullRequestSortOption,
 ): Promise<{ items: PullRequestSummary[]; hasNextPage: boolean }> {
   const repositoryFullName = `${repository.owner}/${repository.repository}`
   const cacheKey = repositoryFullName.toLowerCase()
   const cached = listCache.get(cacheKey)
+  const sortChanged = cached?.sort !== sort
 
-  if (loadMore && cached) {
+  if (loadMore && cached && !sortChanged) {
     if (!cached.hasNextPage) {
       return { items: cached.items, hasNextPage: false }
     }
-    const page = await fetchPullRequestSearchPage(repository, cached.endCursor)
+    const page = await fetchPullRequestSearchPage(repository, cached.endCursor, sort)
     const seenKeys = new Set(cached.items.map((item) => item.key))
     const merged = [...cached.items, ...page.items.filter((item) => !seenKeys.has(item.key))]
     listCache.set(cacheKey, {
@@ -890,20 +907,22 @@ async function listRepositoryPullRequests(
       items: merged,
       hasNextPage: page.hasNextPage,
       endCursor: page.endCursor,
+      sort,
     })
     return { items: merged, hasNextPage: page.hasNextPage }
   }
 
-  if (!loadMore && !forceRefresh && cached && cached.expiresAt > Date.now()) {
+  if (!loadMore && !forceRefresh && !sortChanged && cached && cached.expiresAt > Date.now()) {
     return { items: cached.items, hasNextPage: cached.hasNextPage }
   }
 
-  const page = await fetchPullRequestSearchPage(repository, null)
+  const page = await fetchPullRequestSearchPage(repository, null, sort)
   listCache.set(cacheKey, {
     expiresAt: Date.now() + LIST_CACHE_TTL_MS,
     items: page.items,
     hasNextPage: page.hasNextPage,
     endCursor: page.endCursor,
+    sort,
   })
   return { items: page.items, hasNextPage: page.hasNextPage }
 }
@@ -912,6 +931,7 @@ export async function listPullRequests(
   repositories: GitHubRepositoryRef[],
   forceRefresh = false,
   loadMore = false,
+  sort: PullRequestSortOption = "updated_desc",
 ): Promise<PullRequestListResult> {
   const uniqueRepositories = deduplicateGitHubRepositories(repositories)
   const repositoryNames = uniqueRepositories.map(
@@ -938,7 +958,7 @@ export async function listPullRequests(
     async (repository) => {
       const repositoryFullName = `${repository.owner}/${repository.repository}`
       try {
-        const { items, hasNextPage } = await listRepositoryPullRequests(repository, forceRefresh, loadMore)
+        const { items, hasNextPage } = await listRepositoryPullRequests(repository, forceRefresh, loadMore, sort)
         return { items, hasNextPage, failure: null }
       } catch (error) {
         return {
