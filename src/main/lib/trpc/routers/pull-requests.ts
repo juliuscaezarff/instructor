@@ -3,6 +3,7 @@ import { z } from "zod"
 import { getDatabase, projects } from "../../db"
 import {
   approvePullRequest,
+  closePullRequest,
   createPullRequestComment,
   getCurrentGitHubUser,
   getPullRequestActivity,
@@ -286,6 +287,37 @@ export const pullRequestsRouter = router({
     .mutation(async ({ input }) => {
       try {
         await reopenPullRequest(
+          { owner: input.owner, repository: input.repository },
+          input.number,
+          input.comment,
+        )
+        return { success: true } as const
+      } catch (error) {
+        if (error instanceof PullRequestStateError) {
+          throw new TRPCError({
+            code: mutationErrorCode(error.issue),
+            message: error.message,
+          })
+        }
+        throw error
+      }
+    }),
+
+  close: publicProcedure
+    .input(
+      z.object({
+        owner: z.string().trim().min(1),
+        repository: z.string().trim().min(1),
+        number: z.number().int().positive(),
+        comment: z
+          .string()
+          .max(MAX_COMMENT_BODY_CHARS, `Comment is too long. Limit is ${MAX_COMMENT_BODY_CHARS} characters.`)
+          .optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      try {
+        await closePullRequest(
           { owner: input.owner, repository: input.repository },
           input.number,
           input.comment,
