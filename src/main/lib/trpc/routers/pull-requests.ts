@@ -12,9 +12,11 @@ import {
   listPullRequests,
   MAX_COMMENT_BODY_CHARS,
   MAX_REVIEW_BODY_CHARS,
+  PullRequestChecksError,
   PullRequestCommentError,
   PullRequestReviewError,
   requestChangesOnPullRequest,
+  rerunFailedChecks,
   type GitHubAvailabilityIssue,
 } from "../../git/github/pull-requests"
 import { publicProcedure, router } from "../index"
@@ -224,6 +226,40 @@ export const pullRequestsRouter = router({
         return { success: true } as const
       } catch (error) {
         if (error instanceof PullRequestReviewError) {
+          throw new TRPCError({
+            code: mutationErrorCode(error.issue),
+            message: error.message,
+          })
+        }
+        throw error
+      }
+    }),
+
+  rerunFailedChecks: publicProcedure
+    .input(
+      z.object({
+        owner: z.string().trim().min(1),
+        repository: z.string().trim().min(1),
+        number: z.number().int().positive(),
+        failedChecks: z
+          .array(
+            z.object({
+              name: z.string().min(1),
+              url: z.string().optional(),
+            }),
+          )
+          .min(1),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      try {
+        return await rerunFailedChecks(
+          { owner: input.owner, repository: input.repository },
+          input.number,
+          input.failedChecks,
+        )
+      } catch (error) {
+        if (error instanceof PullRequestChecksError) {
           throw new TRPCError({
             code: mutationErrorCode(error.issue),
             message: error.message,
