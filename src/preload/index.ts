@@ -128,8 +128,13 @@ contextBridge.exposeInMainWorld("desktopApi", {
   // Native features
   setBadge: (count: number | null) => ipcRenderer.invoke("app:set-badge", count),
   setBadgeIcon: (imageData: string | null) => ipcRenderer.invoke("app:set-badge-icon", imageData),
-  showNotification: (options: { title: string; body: string }) =>
+  showNotification: (options: { title: string; body: string; data?: Record<string, unknown> }) =>
     ipcRenderer.invoke("app:show-notification", options),
+  onNotificationClick: (callback: (data: Record<string, unknown>) => void) => {
+    const handler = (_event: unknown, data: Record<string, unknown>) => callback(data)
+    ipcRenderer.on("app:notification-clicked", handler)
+    return () => ipcRenderer.removeListener("app:notification-clicked", handler)
+  },
   openExternal: (url: string) => ipcRenderer.invoke("shell:open-external", url),
 
   // API base URL (for fetch requests to server)
@@ -331,7 +336,8 @@ export interface DesktopApi {
   setAnalyticsOptOut: (optedOut: boolean) => Promise<void>
   setBadge: (count: number | null) => Promise<void>
   setBadgeIcon: (imageData: string | null) => Promise<void>
-  showNotification: (options: { title: string; body: string }) => Promise<void>
+  showNotification: (options: { title: string; body: string; data?: Record<string, unknown> }) => Promise<void>
+  onNotificationClick: (callback: (data: Record<string, unknown>) => void) => () => void
   openExternal: (url: string) => Promise<void>
   getApiBaseUrl: () => Promise<string>
   clipboardWrite: (text: string) => Promise<void>

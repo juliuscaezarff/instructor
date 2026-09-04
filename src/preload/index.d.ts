@@ -67,7 +67,8 @@ export interface DesktopApi {
 
   // Native features
   setBadge: (count: number | null) => Promise<void>
-  showNotification: (options: { title: string; body: string }) => Promise<void>
+  showNotification: (options: { title: string; body: string; data?: Record<string, unknown> }) => Promise<void>
+  onNotificationClick: (callback: (data: Record<string, unknown>) => void) => () => void
   openExternal: (url: string) => Promise<void>
   getApiBaseUrl: () => Promise<string>
 
