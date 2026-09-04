@@ -13,6 +13,7 @@ import {
   MAX_REVIEW_BODY_CHARS,
   PullRequestCommentError,
   PullRequestReviewError,
+  requestChangesOnPullRequest,
   type GitHubAvailabilityIssue,
 } from "../../git/github/pull-requests"
 import { publicProcedure, router } from "../index"
@@ -183,6 +184,37 @@ export const pullRequestsRouter = router({
     .mutation(async ({ input }) => {
       try {
         await approvePullRequest(
+          { owner: input.owner, repository: input.repository },
+          input.number,
+          input.body,
+        )
+        return { success: true } as const
+      } catch (error) {
+        if (error instanceof PullRequestReviewError) {
+          throw new TRPCError({
+            code: mutationErrorCode(error.issue),
+            message: error.message,
+          })
+        }
+        throw error
+      }
+    }),
+
+  requestChanges: publicProcedure
+    .input(
+      z.object({
+        owner: z.string().trim().min(1),
+        repository: z.string().trim().min(1),
+        number: z.number().int().positive(),
+        body: z
+          .string()
+          .max(MAX_REVIEW_BODY_CHARS, `Comment is too long. Limit is ${MAX_REVIEW_BODY_CHARS} characters.`)
+          .refine((value) => value.trim().length > 0, "A justification is required to request changes."),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      try {
+        await requestChangesOnPullRequest(
           { owner: input.owner, repository: input.repository },
           input.number,
           input.body,
