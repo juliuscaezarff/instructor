@@ -8,6 +8,9 @@ import {
   FileCode2,
   Files,
   GitCommitHorizontal,
+  GitMerge,
+  GitPullRequest,
+  GitPullRequestClosed,
   XCircle,
 } from "lucide-react"
 import {
@@ -330,6 +333,11 @@ function FilesPanel({
 function activityLabel(item: PullRequestActivityItem): string {
   if (item.kind === "commit") return "committed"
   if (item.kind === "comment") return "commented"
+  if (item.kind === "state") {
+    if (item.state === "closed") return "closed this pull request"
+    if (item.state === "reopened") return "reopened this pull request"
+    return "merged this pull request"
+  }
   return item.state.replaceAll("_", " ").toLowerCase()
 }
 
@@ -340,6 +348,16 @@ function ActivityIcon({ item }: { item: PullRequestActivityItem }) {
     return (
       <span className="flex size-5 shrink-0 items-center justify-center text-muted-foreground">
         <GitCommitHorizontal className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+      </span>
+    )
+  }
+
+  if (item.kind === "state") {
+    const StateIcon = item.state === "merged" ? GitMerge : item.state === "closed" ? GitPullRequestClosed : GitPullRequest
+    const colorClass = item.state === "merged" ? "text-violet-500" : item.state === "closed" ? "text-destructive" : "text-emerald-500"
+    return (
+      <span className={cn("flex size-5 shrink-0 items-center justify-center", colorClass)}>
+        <StateIcon className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
       </span>
     )
   }
@@ -406,7 +424,8 @@ export function PullRequestActivitySection({
                   )}
                 </div>
                 <div className="min-w-0 flex-1 pb-3">
-                  <div className="flex min-w-0 flex-wrap items-baseline gap-x-1 text-xs leading-5">
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs leading-5">
+                    {activityItem.kind === "state" && <GitHubAvatar login={activityItem.author} />}
                     <span className="font-medium text-foreground">{activityItem.author || "Unknown author"}</span>
                     <span className="text-muted-foreground">{activityLabel(activityItem)}</span>
                     {activityItem.kind === "commit" && (
@@ -418,7 +437,7 @@ export function PullRequestActivitySection({
                     <time className="text-muted-foreground" dateTime={activityItem.createdAt ? new Date(activityItem.createdAt).toISOString() : undefined}>
                       {formatRelativeTime(activityItem.createdAt)}
                     </time>
-                    {activityItem.kind !== "commit" && activityItem.url && (
+                    {(activityItem.kind === "comment" || activityItem.kind === "review") && activityItem.url && (
                       <Button
                         variant="ghost"
                         size="icon"
@@ -435,7 +454,7 @@ export function PullRequestActivitySection({
                       <p className="text-xs leading-snug text-foreground text-pretty">{activityItem.title}</p>
                       {activityItem.body && <p className="mt-1 whitespace-pre-wrap text-[11px] leading-relaxed text-muted-foreground">{activityItem.body}</p>}
                     </div>
-                  ) : activityItem.body ? (
+                  ) : (activityItem.kind === "comment" || activityItem.kind === "review") && activityItem.body ? (
                     <CompactMarkdownRenderer content={activityItem.body} className="mt-1 max-w-[70ch]" />
                   ) : null}
                   {activityItem.bodyTruncated && (
