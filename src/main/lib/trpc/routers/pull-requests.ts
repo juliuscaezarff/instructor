@@ -1,14 +1,38 @@
+import { TRPCError } from "@trpc/server"
 import { z } from "zod"
 import { getDatabase, projects } from "../../db"
 import {
+  approvePullRequest,
+  closePullRequest,
+  createPullRequestComment,
+  getCurrentGitHubUser,
   getPullRequestActivity,
   getPullRequestDetail,
   getPullRequestFileDiff,
   getPullRequestFiles,
+  getPullRequestMergeOptions,
   listPullRequests,
+  MAX_COMMENT_BODY_CHARS,
+  MAX_REVIEW_BODY_CHARS,
+  mergePullRequest,
+  PullRequestChecksError,
+  PullRequestCommentError,
+  PullRequestReviewError,
+  PullRequestStateError,
+  reopenPullRequest,
+  requestChangesOnPullRequest,
+  rerunFailedChecks,
+  type GitHubAvailabilityIssue,
 } from "../../git/github/pull-requests"
 import { publicProcedure, router } from "../index"
 import { getPullRequestWorkspaceTargets, preparePullRequestWorkspace } from "../../git/github/pull-request-workspaces"
+
+function mutationErrorCode(issue: GitHubAvailabilityIssue): "PRECONDITION_FAILED" | "UNAUTHORIZED" | "FORBIDDEN" | "INTERNAL_SERVER_ERROR" {
+  if (issue === "gh_not_found") return "PRECONDITION_FAILED"
+  if (issue === "gh_not_authenticated") return "UNAUTHORIZED"
+  if (issue === "gh_permission_denied") return "FORBIDDEN"
+  return "INTERNAL_SERVER_ERROR"
+}
 
 const workspaceIdentity = z.object({
   owner: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9-]*$/),
@@ -17,6 +41,7 @@ const workspaceIdentity = z.object({
 })
 
 export const pullRequestsRouter = router({
+  currentUser: publicProcedure.query(async () => ({ login: await getCurrentGitHubUser() })),
   workspaceTargets: publicProcedure.input(workspaceIdentity).query(({ input }) => getPullRequestWorkspaceTargets(input)),
   prepareWorkspace: publicProcedure.input(workspaceIdentity.extend({
     projectId: z.string().min(1), workspaceId: z.string().optional(),
@@ -122,4 +147,229 @@ export const pullRequestsRouter = router({
         Boolean(input.refreshToken),
       ),
     ),
+
+  comment: publicProcedure
+    .input(
+      z.object({
+        owner: z.string().trim().min(1),
+        repository: z.string().trim().min(1),
+        number: z.number().int().positive(),
+        body: z
+          .string()
+          .max(MAX_COMMENT_BODY_CHARS, `Comment is too long. Limit is ${MAX_COMMENT_BODY_CHARS} characters.`)
+          .refine((value) => value.trim().length > 0, "Comment cannot be empty."),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      try {
+        return await createPullRequestComment(
+          { owner: input.owner, repository: input.repository },
+          input.number,
+          input.body,
+        )
+      } catch (error) {
+        if (error instanceof PullRequestCommentError) {
+          throw new TRPCError({
+            code: mutationErrorCode(error.issue),
+            message: error.message,
+          })
+        }
+        throw error
+      }
+    }),
+
+  approve: publicProcedure
+    .input(
+      z.object({
+        owner: z.string().trim().min(1),
+        repository: z.string().trim().min(1),
+        number: z.number().int().positive(),
+        body: z
+          .string()
+          .max(MAX_REVIEW_BODY_CHARS, `Comment is too long. Limit is ${MAX_REVIEW_BODY_CHARS} characters.`)
+          .optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      try {
+        await approvePullRequest(
+          { owner: input.owner, repository: input.repository },
+          input.number,
+          input.body,
+        )
+        return { success: true } as const
+      } catch (error) {
+        if (error instanceof PullRequestReviewError) {
+          throw new TRPCError({
+            code: mutationErrorCode(error.issue),
+            message: error.message,
+          })
+        }
+        throw error
+      }
+    }),
+
+  requestChanges: publicProcedure
+    .input(
+      z.object({
+        owner: z.string().trim().min(1),
+        repository: z.string().trim().min(1),
+        number: z.number().int().positive(),
+        body: z
+          .string()
+          .max(MAX_REVIEW_BODY_CHARS, `Comment is too long. Limit is ${MAX_REVIEW_BODY_CHARS} characters.`)
+          .refine((value) => value.trim().length > 0, "A justification is required to request changes."),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      try {
+        await requestChangesOnPullRequest(
+          { owner: input.owner, repository: input.repository },
+          input.number,
+          input.body,
+        )
+        return { success: true } as const
+      } catch (error) {
+        if (error instanceof PullRequestReviewError) {
+          throw new TRPCError({
+            code: mutationErrorCode(error.issue),
+            message: error.message,
+          })
+        }
+        throw error
+      }
+    }),
+
+  rerunFailedChecks: publicProcedure
+    .input(
+      z.object({
+        owner: z.string().trim().min(1),
+        repository: z.string().trim().min(1),
+        number: z.number().int().positive(),
+        failedChecks: z
+          .array(
+            z.object({
+              name: z.string().min(1),
+              url: z.string().optional(),
+            }),
+          )
+          .min(1),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      try {
+        return await rerunFailedChecks(
+          { owner: input.owner, repository: input.repository },
+          input.number,
+          input.failedChecks,
+        )
+      } catch (error) {
+        if (error instanceof PullRequestChecksError) {
+          throw new TRPCError({
+            code: mutationErrorCode(error.issue),
+            message: error.message,
+          })
+        }
+        throw error
+      }
+    }),
+
+  reopen: publicProcedure
+    .input(
+      z.object({
+        owner: z.string().trim().min(1),
+        repository: z.string().trim().min(1),
+        number: z.number().int().positive(),
+        comment: z
+          .string()
+          .max(MAX_COMMENT_BODY_CHARS, `Comment is too long. Limit is ${MAX_COMMENT_BODY_CHARS} characters.`)
+          .optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      try {
+        await reopenPullRequest(
+          { owner: input.owner, repository: input.repository },
+          input.number,
+          input.comment,
+        )
+        return { success: true } as const
+      } catch (error) {
+        if (error instanceof PullRequestStateError) {
+          throw new TRPCError({
+            code: mutationErrorCode(error.issue),
+            message: error.message,
+          })
+        }
+        throw error
+      }
+    }),
+
+  close: publicProcedure
+    .input(
+      z.object({
+        owner: z.string().trim().min(1),
+        repository: z.string().trim().min(1),
+        number: z.number().int().positive(),
+        comment: z
+          .string()
+          .max(MAX_COMMENT_BODY_CHARS, `Comment is too long. Limit is ${MAX_COMMENT_BODY_CHARS} characters.`)
+          .optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      try {
+        await closePullRequest(
+          { owner: input.owner, repository: input.repository },
+          input.number,
+          input.comment,
+        )
+        return { success: true } as const
+      } catch (error) {
+        if (error instanceof PullRequestStateError) {
+          throw new TRPCError({
+            code: mutationErrorCode(error.issue),
+            message: error.message,
+          })
+        }
+        throw error
+      }
+    }),
+
+  mergeOptions: publicProcedure
+    .input(
+      z.object({
+        owner: z.string().trim().min(1),
+        repository: z.string().trim().min(1),
+      }),
+    )
+    .query(({ input }) => getPullRequestMergeOptions({ owner: input.owner, repository: input.repository })),
+
+  merge: publicProcedure
+    .input(
+      z.object({
+        owner: z.string().trim().min(1),
+        repository: z.string().trim().min(1),
+        number: z.number().int().positive(),
+        method: z.enum(["merge", "squash", "rebase"]),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      try {
+        await mergePullRequest(
+          { owner: input.owner, repository: input.repository },
+          input.number,
+          input.method,
+        )
+        return { success: true } as const
+      } catch (error) {
+        if (error instanceof PullRequestStateError) {
+          throw new TRPCError({
+            code: mutationErrorCode(error.issue),
+            message: error.message,
+          })
+        }
+        throw error
+      }
+    }),
 })

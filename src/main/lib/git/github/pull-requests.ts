@@ -1,6 +1,11 @@
 import { z } from "zod"
 import { execWithShellEnv } from "../shell-env"
 import { GHCheckContextSchema } from "./types"
+import { MAX_COMMENT_BODY_CHARS } from "../../../../shared/pull-request-comment"
+import { MAX_REVIEW_BODY_CHARS } from "../../../../shared/pull-request-review"
+import { extractActionsRunId } from "../../../../shared/pull-request-checks"
+
+export { MAX_COMMENT_BODY_CHARS, MAX_REVIEW_BODY_CHARS }
 
 const GHPullRequestListItemSchema = z.object({
   number: z.number(),
@@ -80,6 +85,30 @@ const GHPullRequestActivitySchema = z.object({
   reviews: z.array(GHActivityReviewSchema).default([]),
 })
 
+const GHTimelineNodeSchema = z.object({
+  __typename: z.string(),
+  actor: z.object({ login: z.string() }).nullable().optional(),
+  createdAt: z.string().optional(),
+})
+
+const GHPullRequestTimelineSchema = z.object({
+  data: z
+    .object({
+      repository: z
+        .object({
+          pullRequest: z
+            .object({
+              timelineItems: z.object({
+                nodes: z.array(GHTimelineNodeSchema),
+              }),
+            })
+            .nullable(),
+        })
+        .nullable(),
+    })
+    .nullable(),
+})
+
 const GHRestPullRequestFileSchema = z.object({
   filename: z.string(),
   previous_filename: z.string().optional(),
@@ -96,7 +125,16 @@ const GHPullRequestDetailSchema = GHPullRequestListItemSchema.extend({
   baseRefName: z.string(),
   headRefName: z.string(),
   mergeable: z.enum(["MERGEABLE", "CONFLICTING", "UNKNOWN"]).optional(),
+  mergeStateStatus: z
+    .enum(["BEHIND", "BLOCKED", "CLEAN", "DIRTY", "DRAFT", "HAS_HOOKS", "UNKNOWN", "UNSTABLE"])
+    .optional(),
   latestReviews: z.array(GHReviewSchema).nullable().optional(),
+})
+
+const GHRepositoryMergeSettingsSchema = z.object({
+  allow_merge_commit: z.boolean().default(false),
+  allow_squash_merge: z.boolean().default(false),
+  allow_rebase_merge: z.boolean().default(false),
 })
 
 export type PullRequestState = "draft" | "open" | "merged" | "closed"
@@ -145,17 +183,36 @@ export interface PullRequestSummary {
   checks: PullRequestCheckSummary
 }
 
+export type PullRequestMergeStateStatus =
+  | "BEHIND"
+  | "BLOCKED"
+  | "CLEAN"
+  | "DIRTY"
+  | "DRAFT"
+  | "HAS_HOOKS"
+  | "UNKNOWN"
+  | "UNSTABLE"
+
 export interface PullRequestDetail extends PullRequestSummary {
   body: string
   baseBranch: string
   headBranch: string
   mergeable?: "MERGEABLE" | "CONFLICTING" | "UNKNOWN"
+  mergeStateStatus?: PullRequestMergeStateStatus
   reviewers: Array<{
     login: string
     state: string
   }>
   checkItems: PullRequestCheck[]
 }
+
+export interface PullRequestMergeOptions {
+  allowMergeCommit: boolean
+  allowSquashMerge: boolean
+  allowRebaseMerge: boolean
+}
+
+export type PullRequestMergeMethod = "merge" | "squash" | "rebase"
 
 export interface PullRequestFile {
   index: number
@@ -202,6 +259,14 @@ export type PullRequestActivityItem =
       state: string
       url?: string
     }
+  | {
+      id: string
+      kind: "state"
+      author?: string
+      createdAt: number
+      bodyTruncated?: boolean
+      state: "closed" | "reopened" | "merged"
+    }
 
 export interface PullRequestActivityResult {
   sourceKey?: string
@@ -230,6 +295,7 @@ export interface GitHubRepositoryRef {
 export type GitHubAvailabilityIssue =
   | "gh_not_found"
   | "gh_not_authenticated"
+  | "gh_permission_denied"
   | "unknown"
 
 export interface PullRequestRepositoryFailure {
@@ -265,6 +331,7 @@ const MAX_ACTIVITY_BODY_CHARS = 50_000
 const MAX_ACTIVITY_RESPONSE_BYTES = 4_000_000
 const MAX_PATCH_BYTES = 500_000
 const MAX_PATCH_LINES = 5_000
+const CURRENT_USER_CACHE_TTL_MS = 5 * 60_000
 
 const listCache = new Map<
   string,
@@ -286,6 +353,26 @@ const fileDiffCache = new Map<
   string,
   { expiresAt: number; result: PullRequestFileDiff }
 >()
+let currentUserCache: { expiresAt: number; login: string | null } | null = null
+
+const GHUserSchema = z.object({ login: z.string() })
+
+export async function getCurrentGitHubUser(): Promise<string | null> {
+  if (currentUserCache && currentUserCache.expiresAt > Date.now()) {
+    return currentUserCache.login
+  }
+
+  let login: string | null = null
+  try {
+    const { stdout } = await execWithShellEnv("gh", ["api", "user"], { timeout: 10_000 })
+    login = GHUserSchema.parse(JSON.parse(stdout)).login
+  } catch {
+    login = null
+  }
+
+  currentUserCache = { expiresAt: Date.now() + CURRENT_USER_CACHE_TTL_MS, login }
+  return login
+}
 
 function parseDate(value: string | null | undefined): number | undefined {
   if (!value) return undefined
@@ -374,6 +461,61 @@ export function normalizePullRequestActivity(
     truncated:
       items.length > MAX_ACTIVITY_ITEMS ||
       items.some((item) => item.bodyTruncated),
+  }
+}
+
+const STATE_EVENT_KIND: Record<string, "closed" | "reopened" | "merged"> = {
+  ClosedEvent: "closed",
+  ReopenedEvent: "reopened",
+  MergedEvent: "merged",
+}
+
+export function normalizePullRequestStateEvents(
+  nodes: z.infer<typeof GHTimelineNodeSchema>[],
+): PullRequestActivityItem[] {
+  return nodes.flatMap((node, index) => {
+    const state = STATE_EVENT_KIND[node.__typename]
+    if (!state || !node.createdAt) return []
+    return [{
+      id: `${state}-${index}-${node.createdAt}`,
+      kind: "state" as const,
+      author: node.actor?.login,
+      createdAt: parseDate(node.createdAt) ?? 0,
+      state,
+    }]
+  })
+}
+
+async function getPullRequestStateEvents(
+  repository: GitHubRepositoryRef,
+  number: number,
+): Promise<PullRequestActivityItem[]> {
+  const query = `query($owner: String!, $repo: String!, $number: Int!) {
+    repository(owner: $owner, name: $repo) {
+      pullRequest(number: $number) {
+        timelineItems(itemTypes: [CLOSED_EVENT, REOPENED_EVENT, MERGED_EVENT], first: 100) {
+          nodes {
+            __typename
+            ... on ClosedEvent { actor { login } createdAt }
+            ... on ReopenedEvent { actor { login } createdAt }
+            ... on MergedEvent { actor { login } createdAt }
+          }
+        }
+      }
+    }
+  }`
+
+  try {
+    const { stdout } = await execWithShellEnv(
+      "gh",
+      ["api", "graphql", "-f", `query=${query}`, "-f", `owner=${repository.owner}`, "-f", `repo=${repository.repository}`, "-F", `number=${number}`],
+      { timeout: 20_000 },
+    )
+    const parsed = GHPullRequestTimelineSchema.parse(JSON.parse(stdout))
+    const nodes = parsed.data?.repository?.pullRequest?.timelineItems.nodes ?? []
+    return normalizePullRequestStateEvents(nodes)
+  } catch {
+    return []
   }
 }
 
@@ -503,7 +645,7 @@ export function deduplicateGitHubRepositories(
   return [...unique.values()]
 }
 
-function classifyGitHubError(error: unknown): PullRequestRepositoryFailure["issue"] {
+export function classifyGitHubError(error: unknown): GitHubAvailabilityIssue {
   const message = error instanceof Error ? error.message.toLowerCase() : ""
   const code =
     error instanceof Error && "code" in error
@@ -517,6 +659,16 @@ function classifyGitHubError(error: unknown): PullRequestRepositoryFailure["issu
     message.includes("not recognized")
   ) {
     return "gh_not_found"
+  }
+
+  if (
+    message.includes("must have push access") ||
+    message.includes("must have write access") ||
+    message.includes("not permitted") ||
+    message.includes("resource not accessible by integration") ||
+    message.includes("http 403")
+  ) {
+    return "gh_permission_denied"
   }
 
   if (
@@ -692,7 +844,7 @@ export async function getPullRequestDetail(
       "--repo",
       repositoryFullName,
       "--json",
-      "number,title,url,state,isDraft,author,createdAt,updatedAt,mergedAt,additions,deletions,reviewDecision,statusCheckRollup,body,baseRefName,headRefName,mergeable,latestReviews",
+      "number,title,url,state,isDraft,author,createdAt,updatedAt,mergedAt,additions,deletions,reviewDecision,statusCheckRollup,body,baseRefName,headRefName,mergeable,mergeStateStatus,latestReviews",
     ],
     { timeout: 20_000 },
   )
@@ -706,6 +858,7 @@ export async function getPullRequestDetail(
     baseBranch: raw.baseRefName,
     headBranch: raw.headRefName,
     mergeable: raw.mergeable,
+    mergeStateStatus: raw.mergeStateStatus,
     reviewers: (raw.latestReviews ?? []).flatMap((review) =>
       review.author?.login
         ? [{ login: review.author.login, state: review.state.toLowerCase() }]
@@ -767,23 +920,31 @@ export async function getPullRequestActivity(
   const cached = activityCache.get(cacheKey)
   if (!forceRefresh && cached && cached.expiresAt > Date.now()) return cached.result
 
-  const { stdout } = await execWithShellEnv(
-    "gh",
-    [
-      "pr",
-      "view",
-      String(number),
-      "--repo",
-      repositoryFullName,
-      "--json",
-      "commits,comments,reviews",
-    ],
-    { timeout: 20_000, maxBuffer: MAX_ACTIVITY_RESPONSE_BYTES },
-  )
+  const [{ stdout }, stateEvents] = await Promise.all([
+    execWithShellEnv(
+      "gh",
+      [
+        "pr",
+        "view",
+        String(number),
+        "--repo",
+        repositoryFullName,
+        "--json",
+        "commits,comments,reviews",
+      ],
+      { timeout: 20_000, maxBuffer: MAX_ACTIVITY_RESPONSE_BYTES },
+    ),
+    getPullRequestStateEvents(repository, number),
+  ])
 
   const raw = GHPullRequestActivitySchema.parse(JSON.parse(stdout))
-  const result = {
-    ...normalizePullRequestActivity(raw),
+  const base = normalizePullRequestActivity(raw)
+  const combined = [...base.items, ...stateEvents].sort((a, b) => a.createdAt - b.createdAt)
+  const total = base.total + stateEvents.length
+  const result: PullRequestActivityResult = {
+    items: combined.slice(-MAX_ACTIVITY_ITEMS),
+    total,
+    truncated: total > MAX_ACTIVITY_ITEMS || base.truncated,
     sourceKey: cacheKey,
   }
   activityCache.set(cacheKey, {
@@ -838,4 +999,248 @@ export async function getPullRequestFileDiff(
     result,
   })
   return result
+}
+
+export class PullRequestReviewError extends Error {
+  issue: GitHubAvailabilityIssue
+
+  constructor(issue: GitHubAvailabilityIssue, message: string) {
+    super(message)
+    this.name = "PullRequestReviewError"
+    this.issue = issue
+  }
+}
+
+export async function approvePullRequest(
+  repository: GitHubRepositoryRef,
+  number: number,
+  body?: string,
+): Promise<void> {
+  const repositoryFullName = `${repository.owner}/${repository.repository}`
+  const args = ["pr", "review", String(number), "--repo", repositoryFullName, "--approve"]
+  if (body && body.trim().length > 0) args.push("--body", body)
+
+  try {
+    await execWithShellEnv("gh", args, { timeout: 20_000 })
+  } catch (error) {
+    throw new PullRequestReviewError(classifyGitHubError(error), errorMessage(error))
+  }
+
+  const cacheKey = `${repositoryFullName.toLowerCase()}#${number}`
+  detailCache.delete(cacheKey)
+  activityCache.delete(cacheKey)
+  listCache.delete(repositoryFullName.toLowerCase())
+}
+
+export async function requestChangesOnPullRequest(
+  repository: GitHubRepositoryRef,
+  number: number,
+  body: string,
+): Promise<void> {
+  const repositoryFullName = `${repository.owner}/${repository.repository}`
+  const args = ["pr", "review", String(number), "--repo", repositoryFullName, "--request-changes", "--body", body]
+
+  try {
+    await execWithShellEnv("gh", args, { timeout: 20_000 })
+  } catch (error) {
+    throw new PullRequestReviewError(classifyGitHubError(error), errorMessage(error))
+  }
+
+  const cacheKey = `${repositoryFullName.toLowerCase()}#${number}`
+  detailCache.delete(cacheKey)
+  activityCache.delete(cacheKey)
+  listCache.delete(repositoryFullName.toLowerCase())
+}
+
+export class PullRequestChecksError extends Error {
+  issue: GitHubAvailabilityIssue
+
+  constructor(issue: GitHubAvailabilityIssue, message: string) {
+    super(message)
+    this.name = "PullRequestChecksError"
+    this.issue = issue
+  }
+}
+
+export interface RerunChecksOutcome {
+  rerunRunCount: number
+  unsupportedChecks: string[]
+  failedRuns: Array<{ runId: string; message: string }>
+}
+
+export async function rerunFailedChecks(
+  repository: GitHubRepositoryRef,
+  number: number,
+  failedChecks: Array<{ name: string; url?: string }>,
+): Promise<RerunChecksOutcome> {
+  const repositoryFullName = `${repository.owner}/${repository.repository}`
+
+  const runIds = new Set<string>()
+  const unsupportedChecks: string[] = []
+  for (const check of failedChecks) {
+    const runId = extractActionsRunId(check.url)
+    if (runId) runIds.add(runId)
+    else unsupportedChecks.push(check.name)
+  }
+
+  let rerunRunCount = 0
+  const failedRuns: Array<{ runId: string; issue: GitHubAvailabilityIssue; message: string }> = []
+
+  for (const runId of runIds) {
+    try {
+      await execWithShellEnv("gh", ["run", "rerun", runId, "--repo", repositoryFullName, "--failed"], { timeout: 20_000 })
+      rerunRunCount += 1
+    } catch (error) {
+      failedRuns.push({ runId, issue: classifyGitHubError(error), message: errorMessage(error) })
+    }
+  }
+
+  if (runIds.size > 0 && rerunRunCount === 0) {
+    const first = failedRuns[0]!
+    throw new PullRequestChecksError(first.issue, first.message)
+  }
+
+  const cacheKey = `${repositoryFullName.toLowerCase()}#${number}`
+  detailCache.delete(cacheKey)
+  activityCache.delete(cacheKey)
+  listCache.delete(repositoryFullName.toLowerCase())
+
+  return {
+    rerunRunCount,
+    unsupportedChecks,
+    failedRuns: failedRuns.map(({ runId, message }) => ({ runId, message })),
+  }
+}
+
+export class PullRequestStateError extends Error {
+  issue: GitHubAvailabilityIssue
+
+  constructor(issue: GitHubAvailabilityIssue, message: string) {
+    super(message)
+    this.name = "PullRequestStateError"
+    this.issue = issue
+  }
+}
+
+export async function reopenPullRequest(
+  repository: GitHubRepositoryRef,
+  number: number,
+  comment?: string,
+): Promise<void> {
+  const repositoryFullName = `${repository.owner}/${repository.repository}`
+  const args = ["pr", "reopen", String(number), "--repo", repositoryFullName]
+  if (comment && comment.trim().length > 0) args.push("--comment", comment)
+
+  try {
+    await execWithShellEnv("gh", args, { timeout: 20_000 })
+  } catch (error) {
+    throw new PullRequestStateError(classifyGitHubError(error), errorMessage(error))
+  }
+
+  const cacheKey = `${repositoryFullName.toLowerCase()}#${number}`
+  detailCache.delete(cacheKey)
+  activityCache.delete(cacheKey)
+  listCache.delete(repositoryFullName.toLowerCase())
+}
+
+export async function closePullRequest(
+  repository: GitHubRepositoryRef,
+  number: number,
+  comment?: string,
+): Promise<void> {
+  const repositoryFullName = `${repository.owner}/${repository.repository}`
+  const args = ["pr", "close", String(number), "--repo", repositoryFullName]
+  if (comment && comment.trim().length > 0) args.push("--comment", comment)
+
+  try {
+    await execWithShellEnv("gh", args, { timeout: 20_000 })
+  } catch (error) {
+    throw new PullRequestStateError(classifyGitHubError(error), errorMessage(error))
+  }
+
+  const cacheKey = `${repositoryFullName.toLowerCase()}#${number}`
+  detailCache.delete(cacheKey)
+  activityCache.delete(cacheKey)
+  listCache.delete(repositoryFullName.toLowerCase())
+}
+
+export async function getPullRequestMergeOptions(
+  repository: GitHubRepositoryRef,
+): Promise<PullRequestMergeOptions> {
+  const repositoryFullName = `${repository.owner}/${repository.repository}`
+  const { stdout } = await execWithShellEnv(
+    "gh",
+    ["api", `repos/${repositoryFullName}`],
+    { timeout: 20_000 },
+  )
+  const raw = GHRepositoryMergeSettingsSchema.parse(JSON.parse(stdout))
+  return {
+    allowMergeCommit: raw.allow_merge_commit,
+    allowSquashMerge: raw.allow_squash_merge,
+    allowRebaseMerge: raw.allow_rebase_merge,
+  }
+}
+
+const MERGE_METHOD_FLAG: Record<PullRequestMergeMethod, string> = {
+  merge: "--merge",
+  squash: "--squash",
+  rebase: "--rebase",
+}
+
+export async function mergePullRequest(
+  repository: GitHubRepositoryRef,
+  number: number,
+  method: PullRequestMergeMethod,
+): Promise<void> {
+  const repositoryFullName = `${repository.owner}/${repository.repository}`
+  const args = ["pr", "merge", String(number), "--repo", repositoryFullName, MERGE_METHOD_FLAG[method]]
+
+  try {
+    await execWithShellEnv("gh", args, { timeout: 30_000 })
+  } catch (error) {
+    throw new PullRequestStateError(classifyGitHubError(error), errorMessage(error))
+  }
+
+  const cacheKey = `${repositoryFullName.toLowerCase()}#${number}`
+  detailCache.delete(cacheKey)
+  activityCache.delete(cacheKey)
+  listCache.delete(repositoryFullName.toLowerCase())
+}
+
+export class PullRequestCommentError extends Error {
+  issue: GitHubAvailabilityIssue
+
+  constructor(issue: GitHubAvailabilityIssue, message: string) {
+    super(message)
+    this.name = "PullRequestCommentError"
+    this.issue = issue
+  }
+}
+
+export interface PullRequestCommentOutcome {
+  url?: string
+}
+
+export async function createPullRequestComment(
+  repository: GitHubRepositoryRef,
+  number: number,
+  body: string,
+): Promise<PullRequestCommentOutcome> {
+  const repositoryFullName = `${repository.owner}/${repository.repository}`
+
+  try {
+    const { stdout } = await execWithShellEnv(
+      "gh",
+      ["pr", "comment", String(number), "--repo", repositoryFullName, "--body", body],
+      { timeout: 20_000 },
+    )
+
+    const cacheKey = `${repositoryFullName.toLowerCase()}#${number}`
+    activityCache.delete(cacheKey)
+
+    const url = stdout.trim().split("\n").pop()?.trim()
+    return { url: url || undefined }
+  } catch (error) {
+    throw new PullRequestCommentError(classifyGitHubError(error), errorMessage(error))
+  }
 }

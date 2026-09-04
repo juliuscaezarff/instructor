@@ -7,12 +7,12 @@ import {
   ArrowUpRight,
   CheckCircle2,
   ChevronDown,
-  CircleDot,
-  CircleOff,
   Clock3,
   GitBranch,
   GitMerge,
   GitPullRequest,
+  GitPullRequestClosed,
+  GitPullRequestDraft,
   RefreshCw,
   Search,
   SlidersHorizontal,
@@ -69,6 +69,13 @@ import {
 } from "./atoms"
 import { PullRequestDetailTabs } from "./pull-request-detail-tabs"
 import { PullRequestAgentActions } from "./pull-request-agent-actions"
+import { PullRequestApproveAction } from "./pull-request-approve-action"
+import { PullRequestRequestChangesAction } from "./pull-request-request-changes-action"
+import { PullRequestRerunChecksAction } from "./pull-request-rerun-checks-action"
+import { PullRequestReopenAction } from "./pull-request-reopen-action"
+import { PullRequestCloseAction } from "./pull-request-close-action"
+import { PullRequestMergeAction } from "./pull-request-merge-action"
+import { formatRelativeTime } from "./format-relative-time"
 import { pullRequestKeyFromUrl } from "../../../shared/pull-request-agent-context"
 
 type AgentProvider = "claude-code" | "codex"
@@ -152,10 +159,10 @@ const STATE_FILTERS: Array<{ value: PullRequestStateFilter; label: string }> = [
 ]
 
 const STATE_COPY = {
-  draft: { label: "Draft", icon: GitPullRequest, className: "text-muted-foreground" },
-  open: { label: "Open", icon: CircleDot, className: "text-emerald-500" },
+  draft: { label: "Draft", icon: GitPullRequestDraft, className: "text-muted-foreground" },
+  open: { label: "Open", icon: GitPullRequest, className: "text-emerald-500" },
   merged: { label: "Merged", icon: GitMerge, className: "text-violet-500" },
-  closed: { label: "Closed", icon: CircleOff, className: "text-destructive" },
+  closed: { label: "Closed", icon: GitPullRequestClosed, className: "text-destructive" },
 } as const
 
 const REVIEW_COPY = {
@@ -206,12 +213,12 @@ const GROUP_COPY: Record<
   },
   open: {
     label: "Open",
-    icon: CircleDot,
+    icon: GitPullRequest,
     className: "text-muted-foreground",
   },
   draft: {
     label: "Draft",
-    icon: GitPullRequest,
+    icon: GitPullRequestDraft,
     className: "text-muted-foreground",
   },
   merged: {
@@ -221,7 +228,7 @@ const GROUP_COPY: Record<
   },
   closed: {
     label: "Closed",
-    icon: CircleOff,
+    icon: GitPullRequestClosed,
     className: "text-destructive",
   },
 }
@@ -241,21 +248,6 @@ function getGroupKey(item: PullRequestSummary): PullRequestGroupKey {
     return item.state
   }
   return item.reviewState === "none" ? "open" : item.reviewState
-}
-
-function formatRelativeTime(timestamp: number): string {
-  if (!timestamp) return "Unknown age"
-  const elapsed = Math.max(0, Date.now() - timestamp)
-  const minutes = Math.floor(elapsed / 60_000)
-  if (minutes < 1) return "now"
-  if (minutes < 60) return `${minutes}m`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h`
-  const days = Math.floor(hours / 24)
-  if (days < 30) return `${days}d`
-  const months = Math.floor(days / 30)
-  if (months < 12) return `${months}mo`
-  return `${Math.floor(months / 12)}y`
 }
 
 function ChecksSummary({ checks }: { checks: PullRequestSummary["checks"] }) {
@@ -436,6 +428,10 @@ function PullRequestDetailPane({
   onOpenWorkspace: (workspaceId: string) => void
 }) {
   const openExternal = trpc.external.openExternal.useMutation()
+  const currentUserQuery = trpc.pullRequests.currentUser.useQuery(undefined, {
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+  })
 
   if (!item) return null
 
@@ -476,7 +472,13 @@ function PullRequestDetailPane({
           <span aria-hidden="true">·</span>
           <span className="shrink-0 tabular-nums">#{item.number}</span>
         </div>
-        <div className={cn("row-start-1", compact ? "col-start-3" : "col-start-2")}>
+        <div className={cn("row-start-1 flex items-center gap-1", compact ? "col-start-3" : "col-start-2")}>
+          <PullRequestRequestChangesAction key={`${item.key}-request-changes`} item={item} currentUserLogin={currentUserQuery.data?.login} />
+          <PullRequestApproveAction key={`${item.key}-approve`} item={item} currentUserLogin={currentUserQuery.data?.login} />
+          {detail && <PullRequestRerunChecksAction key={`${item.key}-rerun-checks`} item={item} checkItems={detail.checkItems} />}
+          {detail && <PullRequestMergeAction key={`${item.key}-merge`} item={item} mergeStateStatus={detail.mergeStateStatus} />}
+          <PullRequestReopenAction key={`${item.key}-reopen`} item={item} />
+          <PullRequestCloseAction key={`${item.key}-close`} item={item} />
           <PullRequestAgentActions key={item.key} pr={item} />
         </div>
         {!compact && (

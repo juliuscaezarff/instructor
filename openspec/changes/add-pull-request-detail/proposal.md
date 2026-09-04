@@ -41,4 +41,4 @@ Cada grupo deverá ser proposto separadamente para manter permissões, risco e e
 
 ## Approval
 
-Aguardando aprovação antes da implementação.
+Proposta aprovada pelo usuário em 3 de setembro de 2026.

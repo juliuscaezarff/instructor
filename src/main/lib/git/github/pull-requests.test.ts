@@ -1,10 +1,12 @@
 import { describe, expect, it } from "bun:test"
 import {
   aggregatePullRequestResults,
+  classifyGitHubError,
   deduplicateGitHubRepositories,
   normalizePullRequestActivity,
   normalizePullRequestFileDiff,
   normalizePullRequestFiles,
+  normalizePullRequestStateEvents,
   normalizePullRequestSummary,
   type PullRequestRepositoryFailure,
   type PullRequestSummary,
@@ -207,6 +209,21 @@ describe("pull request normalization", () => {
     expect(oversized.truncated).toBe(true)
   })
 
+  it("classifies gh CLI failures without conflating permission and authentication errors", () => {
+    expect(classifyGitHubError(new Error("HTTP 403: must have push access to repository"))).toBe(
+      "gh_permission_denied",
+    )
+    expect(classifyGitHubError(new Error("GraphQL: Resource not accessible by integration"))).toBe(
+      "gh_permission_denied",
+    )
+    expect(classifyGitHubError(new Error("HTTP 401: Bad credentials, run gh auth login"))).toBe(
+      "gh_not_authenticated",
+    )
+    const notFound = Object.assign(new Error("spawn gh ENOENT"), { code: "ENOENT" })
+    expect(classifyGitHubError(notFound)).toBe("gh_not_found")
+    expect(classifyGitHubError(new Error("connection reset"))).toBe("unknown")
+  })
+
   it("bounds oversized activity bodies", () => {
     const result = normalizePullRequestActivity({
       commits: [],
@@ -222,7 +239,28 @@ describe("pull request normalization", () => {
     })
 
     expect(result.truncated).toBe(true)
-    expect(result.items[0]?.body).toHaveLength(50_000)
-    expect(result.items[0]?.bodyTruncated).toBe(true)
+    const item = result.items[0]
+    expect(item?.kind).toBe("comment")
+    if (item?.kind === "comment") {
+      expect(item.body).toHaveLength(50_000)
+    }
+    expect(item?.bodyTruncated).toBe(true)
+  })
+
+  it("normalizes GitHub Actions timeline nodes into state events, skipping unrecognized types", () => {
+    const result = normalizePullRequestStateEvents([
+      { __typename: "ClosedEvent", actor: { login: "julius" }, createdAt: "2026-09-04T02:50:02Z" },
+      { __typename: "ReopenedEvent", actor: { login: "julius" }, createdAt: "2026-09-04T03:11:20Z" },
+      { __typename: "MergedEvent", actor: { login: "reviewer" }, createdAt: "2026-09-04T04:00:00Z" },
+      { __typename: "LabeledEvent", actor: { login: "julius" }, createdAt: "2026-09-04T05:00:00Z" },
+    ])
+
+    expect(result.map((item) => item.kind === "state" && item.state)).toEqual([
+      "closed",
+      "reopened",
+      "merged",
+    ])
+    expect(result.every((item) => item.kind === "state")).toBe(true)
+    expect(result[2]?.author).toBe("reviewer")
   })
 })

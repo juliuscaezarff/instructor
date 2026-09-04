@@ -18,9 +18,9 @@ O detalhe atual consulta `gh pr view` somente após uma seleção e mostra descr
 
 ### Contextos progressivos
 
-O painel terá `Resumo`, `Arquivos` e `Atividade`. O resumo continua sendo o primeiro contexto. Atividade só é consultada ao ser aberta; a lista de arquivos não inclui patches; o patch é carregado apenas para o arquivo selecionado.
+O painel tem `Resumo` (metadados, descrição, checks e a timeline de Atividade) e `Arquivos`. Resumo é o contexto padrão e único ponto de leitura+escrita de atividade — commits, comentários e reviews são consultados junto com o resumo, seguindo o padrão de densidade do Linear (timeline compacta terminando no composer de comentário, sem exigir trocar de aba para responder). A lista de arquivos não inclui patches; o patch é carregado apenas para o arquivo selecionado.
 
-Essa separação evita que um clique dispare uma resposta grande contendo todos os commits, comentários e diffs.
+Decisão revisada após feedback de uso: a separação inicial de Atividade em aba própria criava fricção para comentar (era preciso trocar de contexto para uma ação de uso frequente). Arquivos continua isolado porque, ao contrário de Atividade, seu custo (patches por arquivo) é proporcional ao tamanho do PR e não à quantidade de eventos, e patches não fazem sentido no fluxo de leitura do resumo.
 
 ### Consultas locais somente leitura
 
@@ -45,7 +45,9 @@ Uma visualização side-by-side fica fora do primeiro corte porque reduz a legib
 
 ### Atividade
 
-A timeline combina commits, comentários e reviews em ordem cronológica, mantendo autor, avatar, horário, tipo e conteúdo. Eventos usam ícone e texto; cor não será o único indicador. Conteúdo Markdown seguirá o renderer seguro já usado no resumo.
+A timeline combina commits, comentários, reviews e eventos de ciclo de vida do PR (fechado, reaberto, mesclado) em ordem cronológica, mantendo autor, avatar, horário, tipo e conteúdo. Eventos usam ícone e texto; cor não será o único indicador. Conteúdo Markdown seguirá o renderer seguro já usado no resumo.
+
+**Atualização (após implementar Reabrir/Fechar):** `gh pr view --json commits,comments,reviews` não expõe eventos de fechar/reabrir/mesclar — só estão disponíveis via `timelineItems` do GraphQL (`gh api graphql`, primeira consulta GraphQL do projeto). A consulta roda em paralelo à consulta de atividade existente, tolera falha isolada (retorna lista vazia em vez de quebrar a timeline inteira) e é somente leitura, como as demais. Eventos de ciclo de vida mostram o ícone colorido do estado (mesma paleta de `STATE_COPY`: vermelho fechado, verde reaberto, roxo mesclado) na trilha **e** o avatar de quem executou a ação, inline junto ao nome — diferente de commit/review, que usam só um indicador.
 
 ## Risks / Trade-offs
 
@@ -60,4 +62,4 @@ Não há migração de dados. As novas consultas e contextos são incrementais. 
 
 ## Open Questions
 
-- Definir durante a implementação o limite inicial de eventos e tamanho de patch com base em dados reais.
+- Nenhuma questão bloqueante. Limites iniciais definidos em 300 arquivos, 200 itens de atividade, 50.000 caracteres por corpo e patches de até 500 KB ou 5.000 linhas.

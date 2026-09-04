@@ -1,0 +1,1 @@
+export const MAX_REVIEW_BODY_CHARS = 60_000
