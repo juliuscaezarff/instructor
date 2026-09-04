@@ -1019,6 +1019,27 @@ export async function reopenPullRequest(
   listCache.delete(repositoryFullName.toLowerCase())
 }
 
+export async function closePullRequest(
+  repository: GitHubRepositoryRef,
+  number: number,
+  comment?: string,
+): Promise<void> {
+  const repositoryFullName = `${repository.owner}/${repository.repository}`
+  const args = ["pr", "close", String(number), "--repo", repositoryFullName]
+  if (comment && comment.trim().length > 0) args.push("--comment", comment)
+
+  try {
+    await execWithShellEnv("gh", args, { timeout: 20_000 })
+  } catch (error) {
+    throw new PullRequestStateError(classifyGitHubError(error), errorMessage(error))
+  }
+
+  const cacheKey = `${repositoryFullName.toLowerCase()}#${number}`
+  detailCache.delete(cacheKey)
+  activityCache.delete(cacheKey)
+  listCache.delete(repositoryFullName.toLowerCase())
+}
+
 export class PullRequestCommentError extends Error {
   issue: GitHubAvailabilityIssue
 
