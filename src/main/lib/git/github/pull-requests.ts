@@ -886,6 +886,26 @@ export async function approvePullRequest(
   listCache.delete(repositoryFullName.toLowerCase())
 }
 
+export async function requestChangesOnPullRequest(
+  repository: GitHubRepositoryRef,
+  number: number,
+  body: string,
+): Promise<void> {
+  const repositoryFullName = `${repository.owner}/${repository.repository}`
+  const args = ["pr", "review", String(number), "--repo", repositoryFullName, "--request-changes", "--body", body]
+
+  try {
+    await execWithShellEnv("gh", args, { timeout: 20_000 })
+  } catch (error) {
+    throw new PullRequestReviewError(classifyGitHubError(error), errorMessage(error))
+  }
+
+  const cacheKey = `${repositoryFullName.toLowerCase()}#${number}`
+  detailCache.delete(cacheKey)
+  activityCache.delete(cacheKey)
+  listCache.delete(repositoryFullName.toLowerCase())
+}
+
 export class PullRequestCommentError extends Error {
   issue: GitHubAvailabilityIssue
 
